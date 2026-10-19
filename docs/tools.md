@@ -194,9 +194,9 @@ Organize recipes into named collections.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | enum | Yes | `list` or `create` |
-| `name` | string | For create | Collection name |
-| `recipe_names` | string[] | No | Recipes to include on creation |
+| `action` | enum | Yes | `list`, `create`, `delete`, `add_recipes`, `remove_recipes` |
+| `name` | string | For create, delete, add_recipes, remove_recipes | Collection name |
+| `recipe_names` | string[] | For add_recipes, remove_recipes | Recipes to include on creation (create), add, or remove. add_recipes and remove_recipes return one line per recipe (`added X to C`, `removed X from C`, `failed X: <reason>`) |
 
 **Actions:**
 
@@ -210,6 +210,10 @@ Organize recipes into named collections.
     "name": "Weeknight Dinners",
     "recipe_names": ["Simple Pasta", "Chicken Tikka Masala"]
 } }
+
+// Add recipes to, or remove them from, an existing collection
+{ "name": "recipe_collections", "arguments": { "action": "add_recipes", "name": "Weeknight Dinners", "recipe_names": ["Garlic Pasta"] } }
+{ "name": "recipe_collections", "arguments": { "action": "remove_recipes", "name": "Weeknight Dinners", "recipe_names": ["Garlic Pasta"] } }
 ```
 
 ---

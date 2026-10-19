@@ -920,6 +920,60 @@ class AnyListClient {
     }
   }
 
+  /**
+   * Resolve a collection by name and each recipe name to an id, then run `change`
+   * once per recipe. Returns [{ recipeName, error: string|null }]; throws only
+   * when the collection itself is missing.
+   */
+  async _changeCollection(name, recipeNames, change) {
+    const userData = await this.client._getUserData(true);
+    const raw = (userData.recipeDataResponse.recipeCollections || [])
+      .find(c => c.name && c.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (!raw) throw new Error(`Recipe collection "${name}" not found`);
+    const collection = this.client.createRecipeCollection(raw);
+    const recipes = await this.client.getRecipes();
+    const outcomes = [];
+    for (const recipeName of recipeNames) {
+      try {
+        const recipe = recipes.find(r => r.name && r.name.trim().toLowerCase() === recipeName.trim().toLowerCase());
+        if (!recipe) throw new Error(`Recipe "${recipeName}" not found`);
+        await change(collection, recipe.identifier, raw.name);
+        outcomes.push({ recipeName, error: null });
+      } catch (error) {
+        outcomes.push({ recipeName, error: error.message });
+      }
+    }
+    return outcomes;
+  }
+
+  async addRecipesToCollection(name, recipeNames) {
+    if (!this.client) {
+      throw new Error('Not connected. Call connect() first.');
+    }
+    try {
+      return await this._changeCollection(name, recipeNames, async (collection, recipeId, collectionName) => {
+        if (collection.recipeIds.includes(recipeId)) throw new Error(`already in collection "${collectionName}"`);
+        await collection.addRecipe(recipeId);
+      });
+    } catch (error) {
+      throw new Error(`Failed to add recipes to collection: ${error.message}`);
+    }
+  }
+
+  async removeRecipesFromCollection(name, recipeNames) {
+    if (!this.client) {
+      throw new Error('Not connected. Call connect() first.');
+    }
+    try {
+      return await this._changeCollection(name, recipeNames, async (collection, recipeId, collectionName) => {
+        if (!collection.recipeIds.includes(recipeId)) throw new Error(`not in collection "${collectionName}"`);
+        await collection.removeRecipe(recipeId);
+      });
+    } catch (error) {
+      throw new Error(`Failed to remove recipes from collection: ${error.message}`);
+    }
+  }
+
   async deleteRecipeCollection(name) {
     if (!this.client) {
       throw new Error('Not connected. Call connect() first.');

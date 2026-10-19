@@ -227,6 +227,35 @@ export class MockAnyListClient {
     return c;
   }
 
+  // Per-recipe outcomes: [{ recipeName, error: string|null }]. Throws only if the collection is missing.
+  _collection(name) {
+    const c = this._collections.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!c) throw new Error(`Recipe collection "${name}" not found`);
+    return c;
+  }
+
+  async addRecipesToCollection(name, recipeNames) {
+    const c = this._collection(name);
+    return recipeNames.map(recipeName => {
+      if (!this._recipes.some(r => r.name.toLowerCase() === recipeName.toLowerCase())) return { recipeName, error: `Recipe "${recipeName}" not found` };
+      if (c.recipeNames.includes(recipeName)) return { recipeName, error: `already in collection "${c.name}"` };
+      c.recipeNames.push(recipeName);
+      c.recipeCount = c.recipeNames.length;
+      return { recipeName, error: null };
+    });
+  }
+
+  async removeRecipesFromCollection(name, recipeNames) {
+    const c = this._collection(name);
+    return recipeNames.map(recipeName => {
+      const idx = c.recipeNames.indexOf(recipeName);
+      if (idx === -1) return { recipeName, error: `not in collection "${c.name}"` };
+      c.recipeNames.splice(idx, 1);
+      c.recipeCount = c.recipeNames.length;
+      return { recipeName, error: null };
+    });
+  }
+
   async deleteRecipeCollection(name) {
     const idx = this._collections.findIndex(c => c.name.toLowerCase() === name.toLowerCase());
     if (idx === -1) throw new Error(`Recipe collection "${name}" not found`);
