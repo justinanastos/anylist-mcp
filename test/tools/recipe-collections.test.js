@@ -40,7 +40,7 @@ describe('recipe_collections tool', () => {
     });
   });
 
-  describe('add_recipes / remove_recipes', () => {
+  describe('add_recipes', () => {
     beforeEach(() => {
       client._recipes.push({ identifier: 'r-1', name: 'Pasta' }, { identifier: 'r-2', name: 'Salad' }, { identifier: 'r-3', name: 'Soup' });
       client._collections.push({ identifier: 'c-1', name: 'Weeknight', recipeCount: 1, recipeNames: ['Soup'] });
@@ -60,23 +60,8 @@ describe('recipe_collections tool', () => {
       assert.ok(lines[1].startsWith('failed Ghost:'));
     });
 
-    it('remove_recipes removes one', async () => {
-      const result = await handlers.recipe_collections({ action: 'remove_recipes', name: 'Weeknight', recipe_names: ['Soup'] });
-      assert.equal(result.content[0].text, 'removed Soup from Weeknight');
-      assert.deepEqual(client._collections[0].recipeNames, []);
-    });
-
-    it('remove_recipes names a recipe not in the collection as failed', async () => {
-      const result = await handlers.recipe_collections({ action: 'remove_recipes', name: 'Weeknight', recipe_names: ['Soup', 'Pasta'] });
-      assert.notEqual(result.isError, true);
-      const lines = result.content[0].text.split('\n');
-      assert.equal(lines[0], 'removed Soup from Weeknight');
-      assert.ok(lines[1].startsWith('failed Pasta:'));
-      assert.ok(lines[1].includes('not in collection'));
-    });
-
     it('is an error only when every recipe failed', async () => {
-      const result = await handlers.recipe_collections({ action: 'remove_recipes', name: 'Weeknight', recipe_names: ['Pasta'] });
+      const result = await handlers.recipe_collections({ action: 'add_recipes', name: 'Weeknight', recipe_names: ['Ghost'] });
       assert.equal(result.isError, true);
     });
 

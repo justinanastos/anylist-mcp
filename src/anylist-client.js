@@ -791,9 +791,11 @@ class AnyListClient {
   }
 
   /**
-   * Change only the given fields of an existing event, then save() it
-   * (sends `set-event-details`). `fields` is a subset of
-   * { date: 'YYYY-MM-DD', title, recipeId, labelId, details }; `undefined` keys are ignored.
+   * Move or edit an event by recreating it: AnyList's server ignores field changes
+   * sent via `set-event-details`. Creates the merged event first, then deletes the
+   * old one, so a failure never loses the meal. The event gets a new identifier.
+   * `fields` is a subset of { date: 'YYYY-MM-DD', title, recipeId, labelId, details };
+   * `undefined` keys keep the existing value.
    */
   async updateMealPlanEvent(eventId, fields = {}) {
     if (!this.client) {
@@ -805,13 +807,21 @@ class AnyListClient {
       if (!event) {
         throw new Error(`Meal plan event "${eventId}" not found`);
       }
-      if (fields.date !== undefined) event.date = new Date(`${fields.date}T12:00:00`);
-      for (const key of ['title', 'recipeId', 'labelId', 'details']) {
-        if (fields[key] !== undefined) event[key] = fields[key];
-      }
-      await event.save();
-      console.error(`Updated meal plan event: ${eventId}`);
-      return { identifier: event.identifier };
+      const d = event.date;
+      const existingDate = d instanceof Date
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        : String(d);
+      const pick = (key) => (fields[key] !== undefined ? fields[key] : event[key]);
+      const created = await this.createMealPlanEvent({
+        date: fields.date !== undefined ? fields.date : existingDate,
+        title: pick('title'),
+        recipeId: pick('recipeId'),
+        labelId: pick('labelId'),
+        details: pick('details'),
+      });
+      await this.deleteMealPlanEvent(eventId);
+      console.error(`Updated meal plan event: ${eventId} -> ${created.identifier}`);
+      return { identifier: created.identifier, previousIdentifier: eventId };
     } catch (error) {
       throw new Error(`Failed to update meal plan event: ${error.message}`);
     }
@@ -957,20 +967,6 @@ class AnyListClient {
       });
     } catch (error) {
       throw new Error(`Failed to add recipes to collection: ${error.message}`);
-    }
-  }
-
-  async removeRecipesFromCollection(name, recipeNames) {
-    if (!this.client) {
-      throw new Error('Not connected. Call connect() first.');
-    }
-    try {
-      return await this._changeCollection(name, recipeNames, async (collection, recipeId, collectionName) => {
-        if (!collection.recipeIds.includes(recipeId)) throw new Error(`not in collection "${collectionName}"`);
-        await collection.removeRecipe(recipeId);
-      });
-    } catch (error) {
-      throw new Error(`Failed to remove recipes from collection: ${error.message}`);
     }
   }
 

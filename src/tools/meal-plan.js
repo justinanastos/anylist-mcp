@@ -15,7 +15,7 @@ export function register(server, getClient) {
 - list_events: Show meal plan events (sorted by date). Optional from/to (YYYY-MM-DD, inclusive).
 - list_labels: Show available labels (Breakfast, Lunch, Dinner, etc.) with IDs
 - create_event: Add meal plan events. Pass events: [{date, title?, recipe_id?, label_id?, details?}]
-- update_event: Change events. Pass events: [{event_id, date?, title?, recipe_id?, label_id?, details?}]. Only the fields given change.
+- update_event: Change events. Pass events: [{event_id, date?, title?, recipe_id?, label_id?, details?}]. Only the fields given change. The event gets a new id: it is recreated, and the old id stops working.
 - delete_event: Delete events. Pass event_ids: [...]
 Every write returns one line per change; a failed change does not stop the others.`,
     inputSchema: {
@@ -76,14 +76,14 @@ Every write returns one line per change; a failed change does not stop the other
           if (!batch || batch.length === 0) throw new Error('Action "update_event" requires a non-empty "events" array');
           return await runBatch(batch, e => e.event_id ?? "event", async (e) => {
             if (!e.event_id) throw new Error('"event_id" is required');
-            await client.updateMealPlanEvent(e.event_id, {
+            const result = await client.updateMealPlanEvent(e.event_id, {
               date: e.date,
               title: e.title,
               recipeId: e.recipe_id,
               labelId: e.label_id,
               details: e.details,
             });
-            return `updated ${e.event_id}`;
+            return `updated ${e.event_id} (new id ${result.identifier})`;
           });
         }
         case "delete_event": {

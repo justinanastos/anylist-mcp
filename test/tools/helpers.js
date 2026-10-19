@@ -199,18 +199,24 @@ export class MockAnyListClient {
   async getMealPlanLabels() { return [...this._labels]; }
 
   async createMealPlanEvent(opts) {
-    const identifier = `e-${this._events.length + 1}`;
+    this._eventSeq = (this._eventSeq || 0) + 1;
+    const identifier = `e-${this._eventSeq}`;
     this._events.push({ identifier, ...opts });
     return { identifier, date: opts.date };
   }
 
+  // Mirrors the real client: recreate with merged fields (new id), then delete the old event.
   async updateMealPlanEvent(eventId, fields = {}) {
     const event = this._events.find(e => e.identifier === eventId);
     if (!event) throw new Error(`Meal plan event "${eventId}" not found`);
+    const merged = { ...event };
+    delete merged.identifier;
     for (const [key, value] of Object.entries(fields)) {
-      if (value !== undefined) event[key] = value;
+      if (value !== undefined) merged[key] = value;
     }
-    return { identifier: eventId, date: event.date };
+    const created = await this.createMealPlanEvent(merged);
+    await this.deleteMealPlanEvent(eventId);
+    return { identifier: created.identifier, previousIdentifier: eventId };
   }
 
   async deleteMealPlanEvent(id) {
@@ -240,17 +246,6 @@ export class MockAnyListClient {
       if (!this._recipes.some(r => r.name.toLowerCase() === recipeName.toLowerCase())) return { recipeName, error: `Recipe "${recipeName}" not found` };
       if (c.recipeNames.includes(recipeName)) return { recipeName, error: `already in collection "${c.name}"` };
       c.recipeNames.push(recipeName);
-      c.recipeCount = c.recipeNames.length;
-      return { recipeName, error: null };
-    });
-  }
-
-  async removeRecipesFromCollection(name, recipeNames) {
-    const c = this._collection(name);
-    return recipeNames.map(recipeName => {
-      const idx = c.recipeNames.indexOf(recipeName);
-      if (idx === -1) return { recipeName, error: `not in collection "${c.name}"` };
-      c.recipeNames.splice(idx, 1);
       c.recipeCount = c.recipeNames.length;
       return { recipeName, error: null };
     });

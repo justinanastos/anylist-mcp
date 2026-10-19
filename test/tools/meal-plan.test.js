@@ -162,11 +162,23 @@ describe('meal_plan tool', () => {
   });
 
   describe('update_event', () => {
-    it('update_event moves a date and keeps title and recipe', async () => {
-      client._events.push({ identifier: 'e1', date: '2025-03-01', title: 'Tikka', recipeId: 'r-1', labelId: 'l1' });
+    it('update_event moves a date and keeps title, recipe, label and details', async () => {
+      client._events.push({ identifier: 'e1', date: '2025-03-01', title: 'Tikka', recipeId: 'r-1', labelId: 'l1', details: 'extra naan' });
       const result = await handlers.meal_plan({ action: 'update_event', events: [{ event_id: 'e1', date: '2025-03-05' }] });
-      assert.equal(result.content[0].text, 'updated e1');
-      assert.deepEqual(client._events[0], { identifier: 'e1', date: '2025-03-05', title: 'Tikka', recipeId: 'r-1', labelId: 'l1' });
+      assert.equal(client._events.length, 1);
+      const moved = client._events[0];
+      assert.equal(result.content[0].text, `updated e1 (new id ${moved.identifier})`);
+      assert.deepEqual(moved, { identifier: moved.identifier, date: '2025-03-05', title: 'Tikka', recipeId: 'r-1', labelId: 'l1', details: 'extra naan' });
+    });
+
+    it('update_event gives the event a new id and the old id is no longer listed', async () => {
+      client._events.push({ identifier: 'e1', date: '2025-03-01', title: 'Tikka' });
+      await handlers.meal_plan({ action: 'update_event', events: [{ event_id: 'e1', title: 'Curry' }] });
+      assert.notEqual(client._events[0].identifier, 'e1');
+      const t = (await handlers.meal_plan({ action: 'list_events' })).content[0].text;
+      assert.ok(!t.includes('id: e1)'));
+      assert.ok(t.includes(client._events[0].identifier));
+      assert.equal(client._events[0].title, 'Curry');
     });
 
     it('update_event names an unknown event_id as failed while applying the rest', async () => {
@@ -177,10 +189,10 @@ describe('meal_plan tool', () => {
       });
       assert.notEqual(result.isError, true);
       const lines = result.content[0].text.split('\n');
-      assert.equal(lines[0], 'updated e1');
+      assert.match(lines[0], /^updated e1 \(new id \S+\)$/);
       assert.match(lines[1], /^failed nope: .*not found/);
-      assert.equal(lines[2], 'updated e2');
-      assert.equal(client._events[1].title, 'C');
+      assert.match(lines[2], /^updated e2 \(new id \S+\)$/);
+      assert.deepEqual(client._events.map(e => e.title).sort(), ['A', 'C']);
     });
 
     it('is an error only when every update failed', async () => {

@@ -12,12 +12,12 @@ export function register(server, getClient) {
 - create: Create a new collection, optionally with recipes
 - delete: Delete a collection by name
 - add_recipes: Add recipes to a collection. Pass name and recipe_names: [...]
-- remove_recipes: Remove recipes from a collection. Pass name and recipe_names: [...]
-add_recipes and remove_recipes return one line per recipe; a failed recipe does not stop the others.`,
+add_recipes returns one line per recipe; a failed recipe does not stop the others.
+Removing a recipe from a collection isn't supported; do that in the AnyList app.`,
     inputSchema: {
-      action: z.enum(["list", "create", "delete", "add_recipes", "remove_recipes"]).describe("The collection action to perform"),
-      name: z.string().optional().describe("Collection name (required for create, delete, add_recipes, remove_recipes)"),
-      recipe_names: z.array(z.string()).optional().describe("Recipe names (create, add_recipes, remove_recipes)"),
+      action: z.enum(["list", "create", "delete", "add_recipes"]).describe("The collection action to perform"),
+      name: z.string().optional().describe("Collection name (required for create, delete, add_recipes)"),
+      recipe_names: z.array(z.string()).optional().describe("Recipe names (create, add_recipes)"),
     }
   }, async (params) => {
     const { action, name, recipe_names } = params;
@@ -43,17 +43,13 @@ add_recipes and remove_recipes return one line per recipe; a failed recipe does 
           await client.deleteRecipeCollection(deleteCollectionName);
           return textResponse(`Deleted recipe collection "${deleteCollectionName}"`);
         }
-        case "add_recipes":
-        case "remove_recipes": {
-          if (!name) throw new Error(`Action "${action}" requires parameter "name"`);
-          if (!recipe_names || recipe_names.length === 0) throw new Error(`Action "${action}" requires a non-empty "recipe_names" array`);
-          const adding = action === "add_recipes";
-          const outcomes = adding
-            ? await client.addRecipesToCollection(name, recipe_names)
-            : await client.removeRecipesFromCollection(name, recipe_names);
+        case "add_recipes": {
+          if (!name) throw new Error('Action "add_recipes" requires parameter "name"');
+          if (!recipe_names || recipe_names.length === 0) throw new Error('Action "add_recipes" requires a non-empty "recipe_names" array');
+          const outcomes = await client.addRecipesToCollection(name, recipe_names);
           return batchResponse(outcomes.map(o => o.error
             ? { ok: false, text: `failed ${o.recipeName}: ${o.error}` }
-            : { ok: true, text: adding ? `added ${o.recipeName} to ${name}` : `removed ${o.recipeName} from ${name}` }));
+            : { ok: true, text: `added ${o.recipeName} to ${name}` }));
         }
       }
     } catch (error) {

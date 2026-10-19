@@ -151,14 +151,14 @@ Manage AnyList recipes. Ingredients have separate fields: `name` (only what you 
 
 ## `meal_plan`
 
-Manage the AnyList meal planning calendar. Every write takes an array and returns one line per change (`created ...`, `updated ...`, `deleted ...`, or `failed <id>: <reason>`). A failed change does not stop the others. The call is an error only when every change failed.
+Manage the AnyList meal planning calendar. Every write takes an array and returns one line per change (`created ...`, `updated <old id> (new id <new id>)`, `deleted ...`, or `failed <id>: <reason>`). A failed change does not stop the others. The call is an error only when every change failed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | enum | Yes | `list_events`, `list_labels`, `create_event`, `update_event`, `delete_event` |
 | `from` | string | No | `YYYY-MM-DD`, inclusive (list_events only) |
 | `to` | string | No | `YYYY-MM-DD`, inclusive (list_events only) |
-| `events` | array | For create, update | create: `[{ date, title?, recipe_id?, label_id?, details? }]`. update: `[{ event_id, date?, title?, recipe_id?, label_id?, details? }]`, only the fields given change |
+| `events` | array | For create, update | create: `[{ date, title?, recipe_id?, label_id?, details? }]`. update: `[{ event_id, date?, title?, recipe_id?, label_id?, details? }]`, only the fields given change. An update recreates the event, so it gets a new id and the old id stops working |
 | `event_ids` | string[] | For delete | Event IDs to delete |
 
 **Actions:**
@@ -179,7 +179,7 @@ Manage the AnyList meal planning calendar. Every write takes an array and return
     ]
 } }
 
-// Move an event to another date, keeping its title and recipe
+// Move an event to another date, keeping its title and recipe (the event gets a new id)
 { "name": "meal_plan", "arguments": { "action": "update_event", "events": [{ "event_id": "<id>", "date": "2025-02-17" }] } }
 
 // Delete events
@@ -194,9 +194,9 @@ Organize recipes into named collections.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | enum | Yes | `list`, `create`, `delete`, `add_recipes`, `remove_recipes` |
-| `name` | string | For create, delete, add_recipes, remove_recipes | Collection name |
-| `recipe_names` | string[] | For add_recipes, remove_recipes | Recipes to include on creation (create), add, or remove. add_recipes and remove_recipes return one line per recipe (`added X to C`, `removed X from C`, `failed X: <reason>`) |
+| `action` | enum | Yes | `list`, `create`, `delete`, `add_recipes` |
+| `name` | string | For create, delete, add_recipes | Collection name |
+| `recipe_names` | string[] | For add_recipes | Recipes to include on creation (create) or add. add_recipes returns one line per recipe (`added X to C`, `failed X: <reason>`). Removing a recipe from a collection isn't supported; do that in the AnyList app |
 
 **Actions:**
 
@@ -211,9 +211,8 @@ Organize recipes into named collections.
     "recipe_names": ["Simple Pasta", "Chicken Tikka Masala"]
 } }
 
-// Add recipes to, or remove them from, an existing collection
+// Add recipes to an existing collection
 { "name": "recipe_collections", "arguments": { "action": "add_recipes", "name": "Weeknight Dinners", "recipe_names": ["Garlic Pasta"] } }
-{ "name": "recipe_collections", "arguments": { "action": "remove_recipes", "name": "Weeknight Dinners", "recipe_names": ["Garlic Pasta"] } }
 ```
 
 ---
