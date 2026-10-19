@@ -134,37 +134,39 @@ Manage AnyList recipes. Ingredients have separate fields: `name` (only what you 
 
 ## `meal_plan`
 
-Manage the AnyList meal planning calendar.
+Manage the AnyList meal planning calendar. Every write takes an array and returns one line per change (`created ...`, `updated ...`, `deleted ...`, or `failed <id>: <reason>`). A failed change does not stop the others. The call is an error only when every change failed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | enum | Yes | See actions below |
-| `date` | string | For create | Date in `YYYY-MM-DD` format |
-| `title` | string | No | Event title (use this or `recipe_id`) |
-| `recipe_id` | string | No | Link an existing recipe by ID |
-| `label_id` | string | No | Meal type label ID (get from `list_labels`) |
-| `details` | string | No | Additional notes |
-| `event_id` | string | For delete | Event ID to delete |
+| `action` | enum | Yes | `list_events`, `list_labels`, `create_event`, `update_event`, `delete_event` |
+| `from` | string | No | `YYYY-MM-DD`, inclusive (list_events only) |
+| `to` | string | No | `YYYY-MM-DD`, inclusive (list_events only) |
+| `events` | array | For create, update | create: `[{ date, title?, recipe_id?, label_id?, details? }]`. update: `[{ event_id, date?, title?, recipe_id?, label_id?, details? }]`, only the fields given change |
+| `event_ids` | string[] | For delete | Event IDs to delete |
 
 **Actions:**
 
 ```json
-// View all meal plan events, sorted by date
-{ "name": "meal_plan", "arguments": { "action": "list_events" } }
+// View meal plan events, sorted by date, optionally within a date range
+{ "name": "meal_plan", "arguments": { "action": "list_events", "from": "2025-02-10", "to": "2025-02-16" } }
 
 // Get available labels (Breakfast, Lunch, Dinner, etc.) with their IDs
 { "name": "meal_plan", "arguments": { "action": "list_labels" } }
 
-// Schedule a meal
+// Schedule meals
 { "name": "meal_plan", "arguments": {
     "action": "create_event",
-    "date": "2025-02-15",
-    "title": "Pizza Night",
-    "label_id": "<id from list_labels>"
+    "events": [
+      { "date": "2025-02-15", "title": "Pizza Night", "label_id": "<id from list_labels>" },
+      { "date": "2025-02-16", "recipe_id": "<id from recipes get>" }
+    ]
 } }
 
-// Delete an event
-{ "name": "meal_plan", "arguments": { "action": "delete_event", "event_id": "<id>" } }
+// Move an event to another date, keeping its title and recipe
+{ "name": "meal_plan", "arguments": { "action": "update_event", "events": [{ "event_id": "<id>", "date": "2025-02-17" }] } }
+
+// Delete events
+{ "name": "meal_plan", "arguments": { "action": "delete_event", "event_ids": ["<id>", "<id>"] } }
 ```
 
 ---

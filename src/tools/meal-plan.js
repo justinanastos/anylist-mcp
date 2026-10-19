@@ -1,38 +1,44 @@
 import { z } from "zod";
-import { textResponse, errorResponse } from "./helpers.js";
-import { createElicitationHelpers } from "./elicitation.js";
+import { textResponse, errorResponse, runBatch } from "./helpers.js";
+
+const eventFields = {
+  title: z.string().optional().describe("Event title (use this OR recipe_id)"),
+  recipe_id: z.string().optional().describe("Recipe ID to link"),
+  label_id: z.string().optional().describe("Label ID for meal type; omit unless a meal was named"),
+  details: z.string().optional().describe("Additional notes"),
+};
 
 export function register(server, getClient) {
-  const { elicitRequiredField } = createElicitationHelpers(server);
-
   server.registerTool("meal_plan", {
     title: "Meal Plan",
     description: `Manage AnyList meal planning calendar. Actions:
-- list_events: Show all meal plan events (sorted by date)
+- list_events: Show meal plan events (sorted by date). Optional from/to (YYYY-MM-DD, inclusive).
 - list_labels: Show available labels (Breakfast, Lunch, Dinner, etc.) with IDs
-- create_event: Add a meal plan event for a date
-- delete_event: Delete a meal plan event by ID`,
+- create_event: Add meal plan events. Pass events: [{date, title?, recipe_id?, label_id?, details?}]
+- update_event: Change events. Pass events: [{event_id, date?, title?, recipe_id?, label_id?, details?}]. Only the fields given change.
+- delete_event: Delete events. Pass event_ids: [...]
+Every write returns one line per change; a failed change does not stop the others.`,
     inputSchema: {
-      action: z.enum(["list_events", "list_labels", "create_event", "delete_event"]).describe("The meal plan action to perform"),
-      date: z.string().optional().describe("Date in YYYY-MM-DD format (required for create_event)"),
-      start_date: z.string().optional().describe("Filter events on or after this date, YYYY-MM-DD (list_events only)"),
-      end_date: z.string().optional().describe("Filter events on or before this date, YYYY-MM-DD (list_events only)"),
-      title: z.string().optional().describe("Event title (create_event; use this OR recipe_id)"),
-      recipe_id: z.string().optional().describe("Recipe ID to link (create_event)"),
-      label_id: z.string().optional().describe("Label ID for meal type (create_event)"),
-      details: z.string().optional().describe("Additional notes (create_event)"),
-      event_id: z.string().optional().describe("Event ID to delete (required for delete_event)"),
+      action: z.enum(["list_events", "list_labels", "create_event", "update_event", "delete_event"]).describe("The meal plan action to perform"),
+      from: z.string().optional().describe("Only events on or after this date, YYYY-MM-DD (list_events only)"),
+      to: z.string().optional().describe("Only events on or before this date, YYYY-MM-DD (list_events only)"),
+      events: z.array(z.object({
+        event_id: z.string().optional().describe("Event ID (update_event only)"),
+        date: z.string().optional().describe("Date in YYYY-MM-DD format (required for create_event)"),
+        ...eventFields,
+      })).optional().describe("Events to create or update"),
+      event_ids: z.array(z.string()).optional().describe("Event IDs to delete (delete_event only)"),
     }
   }, async (params) => {
-    const { action, date, start_date, end_date, title, recipe_id, label_id, details, event_id } = params;
+    const { action, from, to, events: batch, event_ids } = params;
     try {
       const client = await getClient();
       await client.connect(null);
       switch (action) {
         case "list_events": {
           let events = await client.getMealPlanEvents();
-          if (start_date) events = events.filter(e => e.date >= start_date);
-          if (end_date) events = events.filter(e => e.date <= end_date);
+          if (from) events = events.filter(e => e.date >= from);
+          if (to) events = events.filter(e => e.date <= to);
           if (events.length === 0) return textResponse("No meal plan events found.");
           events.sort((a, b) => a.date.localeCompare(b.date));
           const list = events.map(e => {
@@ -53,22 +59,39 @@ export function register(server, getClient) {
           return textResponse(`Meal Plan Labels:\n${list}`);
         }
         case "create_event": {
-          let eventDate = date;
-          if (!eventDate) eventDate = await elicitRequiredField("date", "What date for the meal plan event? (YYYY-MM-DD)");
-          const result = await client.createMealPlanEvent({
-            date: eventDate,
-            title: title || null,
-            recipeId: recipe_id || null,
-            labelId: label_id || null,
-            details: details || null,
+          if (!batch || batch.length === 0) throw new Error('Action "create_event" requires a non-empty "events" array');
+          return await runBatch(batch, e => e.date ?? "event", async (e) => {
+            if (!e.date) throw new Error('"date" is required');
+            const result = await client.createMealPlanEvent({
+              date: e.date,
+              title: e.title || null,
+              recipeId: e.recipe_id || null,
+              labelId: e.label_id || null,
+              details: e.details || null,
+            });
+            return `created ${result.date}${e.title ? ` ${e.title}` : ""} (id ${result.identifier})`;
           });
-          return textResponse(`Created meal plan event for ${result.date}`);
+        }
+        case "update_event": {
+          if (!batch || batch.length === 0) throw new Error('Action "update_event" requires a non-empty "events" array');
+          return await runBatch(batch, e => e.event_id ?? "event", async (e) => {
+            if (!e.event_id) throw new Error('"event_id" is required');
+            await client.updateMealPlanEvent(e.event_id, {
+              date: e.date,
+              title: e.title,
+              recipeId: e.recipe_id,
+              labelId: e.label_id,
+              details: e.details,
+            });
+            return `updated ${e.event_id}`;
+          });
         }
         case "delete_event": {
-          let eventId = event_id;
-          if (!eventId) eventId = await elicitRequiredField("event_id", "Which event ID should be deleted?");
-          await client.deleteMealPlanEvent(eventId);
-          return textResponse(`Deleted meal plan event ${eventId}`);
+          if (!event_ids || event_ids.length === 0) throw new Error('Action "delete_event" requires a non-empty "event_ids" array');
+          return await runBatch(event_ids, id => id, async (id) => {
+            await client.deleteMealPlanEvent(id);
+            return `deleted ${id}`;
+          });
         }
       }
     } catch (error) {

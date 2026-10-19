@@ -711,6 +711,33 @@ class AnyListClient {
     }
   }
 
+  /**
+   * Change only the given fields of an existing event, then save() it
+   * (sends `set-event-details`). `fields` is a subset of
+   * { date: 'YYYY-MM-DD', title, recipeId, labelId, details }; `undefined` keys are ignored.
+   */
+  async updateMealPlanEvent(eventId, fields = {}) {
+    if (!this.client) {
+      throw new Error('Not connected. Call connect() first.');
+    }
+    try {
+      const events = await this.client.getMealPlanningCalendarEvents();
+      const event = events.find(e => e.identifier === eventId);
+      if (!event) {
+        throw new Error(`Meal plan event "${eventId}" not found`);
+      }
+      if (fields.date !== undefined) event.date = new Date(`${fields.date}T12:00:00`);
+      for (const key of ['title', 'recipeId', 'labelId', 'details']) {
+        if (fields[key] !== undefined) event[key] = fields[key];
+      }
+      await event.save();
+      console.error(`Updated meal plan event: ${eventId}`);
+      return { identifier: event.identifier };
+    } catch (error) {
+      throw new Error(`Failed to update meal plan event: ${error.message}`);
+    }
+  }
+
   async deleteMealPlanEvent(eventId) {
     if (!this.client) {
       throw new Error('Not connected. Call connect() first.');
