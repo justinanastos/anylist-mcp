@@ -51,6 +51,22 @@ describe('recipes tool', () => {
       assert.ok(result.content[0].text.includes('Boil water'));
     });
 
+    it('get marks headings', async () => {
+      client._recipes.push({
+        identifier: 'r-1',
+        name: 'Tikka',
+        ingredients: [
+          { name: 'Chicken', isHeading: true, rawIngredient: 'Chicken' },
+          { name: 'chicken breasts', quantity: '2 large', note: 'butterflied and pounded to 1/2 inch', isHeading: false, rawIngredient: '2 large chicken breasts, butterflied and pounded to 1/2 inch' },
+          { name: 'salt', quantity: '1 tsp', note: null },
+        ],
+      });
+      const text = (await handlers.recipes({ action: 'get', name: 'Tikka' })).content[0].text;
+      assert.ok(text.includes('\n## Chicken\n'));
+      assert.ok(text.includes('\n- 2 large chicken breasts, butterflied and pounded to 1/2 inch\n'));
+      assert.ok(text.includes('\n- 1 tsp salt\n'));
+    });
+
     it('returns error for non-existent recipe', async () => {
       const result = await handlers.recipes({ action: 'get', name: 'Nope' });
       assert.equal(result.isError, true);
@@ -60,29 +76,119 @@ describe('recipes tool', () => {
 
   describe('create', () => {
     it('creates a recipe', async () => {
-      const result = await handlers.recipes({ action: 'create', name: 'New Recipe' });
-      assert.ok(result.content[0].text.includes('Created recipe "New Recipe"'));
+      const result = await handlers.recipes({ action: 'create', recipes: [{ name: 'New Recipe' }] });
+      assert.equal(result.content[0].text, 'created New Recipe (id r-1)');
       assert.equal(client._recipes.length, 1);
     });
 
     it('creates recipe with all fields', async () => {
       await handlers.recipes({
         action: 'create',
-        name: 'Full Recipe',
-        ingredients: [{ name: 'sugar', quantity: '1 cup' }],
-        steps: ['Mix well'],
-        note: 'Delicious',
-        prep_time: 5,
-        cook_time: 30,
-        servings: '4',
+        recipes: [{
+          name: 'Full Recipe',
+          ingredients: [{ name: 'sugar', quantity: '1 cup' }],
+          steps: ['Mix well'],
+          note: 'Delicious',
+          prep_time: 5,
+          cook_time: 30,
+          servings: '4',
+        }],
       });
       assert.equal(client._recipes[0].name, 'Full Recipe');
+      assert.deepEqual(client._recipes[0].preparationSteps, ['Mix well']);
     });
 
     it('stores prep/cook times in seconds', async () => {
-      await handlers.recipes({ action: 'create', name: 'Timed', prep_time: 5, cook_time: 30 });
+      await handlers.recipes({ action: 'create', recipes: [{ name: 'Timed', prep_time: 5, cook_time: 30 }] });
       assert.equal(client._recipes[0].prepTime, 300);
       assert.equal(client._recipes[0].cookTime, 1800);
+    });
+
+    it('create saves note and heading', async () => {
+      await handlers.recipes({
+        action: 'create',
+        recipes: [{
+          name: 'Tikka',
+          ingredients: [
+            { name: 'Chicken', is_heading: true },
+            { name: 'chicken breasts', quantity: '2 large', note: 'butterflied and pounded to 1/2 inch' },
+          ],
+        }],
+      });
+      assert.deepEqual(client._recipes[0].ingredients, [
+        { name: 'Chicken', isHeading: true, quantity: null, note: null, rawIngredient: 'Chicken' },
+        {
+          name: 'chicken breasts',
+          quantity: '2 large',
+          note: 'butterflied and pounded to 1/2 inch',
+          isHeading: false,
+          rawIngredient: '2 large chicken breasts, butterflied and pounded to 1/2 inch',
+        },
+      ]);
+    });
+
+    it('heading drops quantity and note', async () => {
+      await handlers.recipes({
+        action: 'create',
+        recipes: [{ name: 'R', ingredients: [{ name: 'Dredge', quantity: '1', note: 'x', is_heading: true }] }],
+      });
+      const [ing] = client._recipes[0].ingredients;
+      assert.equal(ing.quantity, null);
+      assert.equal(ing.note, null);
+      assert.equal(ing.isHeading, true);
+      assert.equal(ing.rawIngredient, 'Dredge');
+    });
+
+    it('create skips an existing recipe by source URL', async () => {
+      client._recipes.push({ identifier: 'r-old', name: 'Old Name', sourceUrl: 'https://example.com/tikka' });
+      const result = await handlers.recipes({
+        action: 'create',
+        recipes: [{ name: 'Different Name', source_url: 'https://example.com/tikka' }],
+      });
+      assert.equal(result.content[0].text, 'existing Old Name (id r-old)');
+      assert.equal(client._recipes.length, 1);
+    });
+
+    it('create skips an existing recipe by name, ignoring case and outer spaces', async () => {
+      client._recipes.push({ identifier: 'r-old', name: 'chicken tikka' });
+      const result = await handlers.recipes({ action: 'create', recipes: [{ name: 'Chicken Tikka ' }] });
+      assert.equal(result.content[0].text, 'existing chicken tikka (id r-old)');
+      assert.equal(client._recipes.length, 1);
+    });
+
+    it('create skips a duplicate within the same call', async () => {
+      const result = await handlers.recipes({ action: 'create', recipes: [{ name: 'Soup' }, { name: 'soup' }] });
+      const lines = result.content[0].text.split('\n');
+      assert.match(lines[0], /^created Soup/);
+      assert.match(lines[1], /^existing Soup/);
+      assert.equal(client._recipes.length, 1);
+    });
+
+    it('create reports partial failure', async () => {
+      const real = client.createRecipe.bind(client);
+      client.createRecipe = async (opts) => {
+        if (opts.name === 'B') throw new Error('boom');
+        return real(opts);
+      };
+      const result = await handlers.recipes({ action: 'create', recipes: [{ name: 'A' }, { name: 'B' }, { name: 'C' }] });
+      assert.notEqual(result.isError, true);
+      const lines = result.content[0].text.split('\n');
+      assert.equal(lines.length, 3);
+      assert.match(lines[0], /^created A/);
+      assert.equal(lines[1], 'failed B: boom');
+      assert.match(lines[2], /^created C/);
+    });
+
+    it('create is an error only when every recipe fails', async () => {
+      client.createRecipe = async () => { throw new Error('boom'); };
+      const result = await handlers.recipes({ action: 'create', recipes: [{ name: 'A' }, { name: 'B' }] });
+      assert.equal(result.isError, true);
+    });
+
+    it('create requires a non-empty recipes array', async () => {
+      const result = await handlers.recipes({ action: 'create' });
+      assert.equal(result.isError, true);
+      assert.ok(result.content[0].text.includes('recipes'));
     });
   });
 
@@ -105,27 +211,17 @@ describe('recipes tool', () => {
     });
   });
 
-  describe('import_url', () => {
-    it('imports a recipe from a URL', async () => {
-      client._pendingImport = {
-        name: 'Chicken Tikka Masala',
-        ingredientCount: 12,
-        stepCount: 6,
-        source: 'AllRecipes',
-        sourceUrl: 'https://example.com/recipe',
-      };
-      const result = await handlers.recipes({ action: 'import_url', url: 'https://example.com/recipe' });
-      assert.ok(result.content[0].text.includes('Imported recipe "Chicken Tikka Masala"'));
-      assert.ok(result.content[0].text.includes('12 ingredients'));
-      assert.ok(result.content[0].text.includes('6 steps'));
-      assert.ok(result.content[0].text.includes('AllRecipes'));
-    });
-
-    it('returns error when URL cannot be parsed', async () => {
-      client._pendingImport = null;
-      const result = await handlers.recipes({ action: 'import_url', url: 'https://bad-site.com' });
-      assert.equal(result.isError, true);
-      assert.ok(result.content[0].text.includes('Could not parse'));
+  describe('removed actions', () => {
+    it('import_url is gone', async () => {
+      const { server } = createMockServer();
+      let schema;
+      server.registerTool = (_n, def) => { schema = def; return { update() {} }; };
+      register(server, () => Promise.resolve(client));
+      const options = schema.inputSchema.action.options;
+      assert.ok(!options.includes('import_url'));
+      assert.ok(!options.includes('normalize'));
+      assert.ok(!schema.description.includes('import_url'));
+      assert.ok(!schema.description.includes('normalize'));
     });
   });
 
@@ -190,6 +286,19 @@ describe('recipes tool', () => {
       });
       assert.equal(client._recipes[0].ingredients.length, 1);
       assert.equal(client._recipes[0].ingredients[0].name, 'penne');
+    });
+
+    it('update saves note and heading on ingredients', async () => {
+      client._recipes.push({ identifier: 'r-1', name: 'Pasta' });
+      await handlers.recipes({
+        action: 'update',
+        name: 'Pasta',
+        ingredients: [{ name: 'Sauce', quantity: '2', is_heading: true }, { name: 'garlic', quantity: '2 cloves', note: 'minced' }],
+      });
+      const [h, g] = client._recipes[0].ingredients;
+      assert.deepEqual(h, { name: 'Sauce', isHeading: true, quantity: null, note: null, rawIngredient: 'Sauce' });
+      assert.equal(g.rawIngredient, '2 cloves garlic, minced');
+      assert.equal(g.isHeading, false);
     });
 
     it('returns error when no fields are provided', async () => {

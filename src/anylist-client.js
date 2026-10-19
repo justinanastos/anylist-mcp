@@ -1,6 +1,20 @@
 import AnyList from '../anylist-js/lib/index.js';
 import { normalizeRecipe } from './recipe-normalizer.js';
 
+// Ingredient fields as the anylist-js protobuf expects them. Carries note and isHeading through.
+function toRecipeIngredient(i) {
+  if (typeof i === 'string') {
+    return { rawIngredient: i, name: i, quantity: null, note: null, isHeading: false };
+  }
+  return {
+    rawIngredient: i.rawIngredient || `${i.quantity || ''} ${i.name || ''}`.trim(),
+    name: i.name || i.rawIngredient || null,
+    quantity: i.quantity || null,
+    note: i.note || null,
+    isHeading: Boolean(i.isHeading),
+  };
+}
+
 class AnyListClient {
   /**
    * @param {{ username?: string, password?: string, defaultListName?: string }} [credentials]
@@ -432,6 +446,7 @@ class AnyListClient {
           name: i.name || null,
           quantity: i.quantity || null,
           note: i.note || null,
+          isHeading: Boolean(i.toJSON().isHeading),
         })) : [],
         preparationSteps: recipe.preparationSteps || [],
       };
@@ -534,12 +549,7 @@ class AnyListClient {
       if (servings) recipeObj.servings = servings;
       if (preparationSteps.length > 0) recipeObj.preparationSteps = preparationSteps;
       if (ingredients.length > 0) {
-        recipeObj.ingredients = ingredients.map(i => ({
-          rawIngredient: typeof i === 'string' ? i : i.rawIngredient || `${i.quantity || ''} ${i.name || ''}`.trim(),
-          name: typeof i === 'string' ? i : (i.name || i.rawIngredient || null),
-          quantity: typeof i === 'string' ? null : i.quantity || null,
-          note: typeof i === 'string' ? null : i.note || null,
-        }));
+        recipeObj.ingredients = ingredients.map(toRecipeIngredient);
       }
       const recipe = await this.client.createRecipe(recipeObj);
       await recipe.save();
@@ -613,12 +623,7 @@ class AnyListClient {
         if (fields[key] !== undefined) merged[key] = fields[key];
       }
       if (fields.ingredients !== undefined) {
-        merged.ingredients = fields.ingredients.map(i => ({
-          rawIngredient: typeof i === 'string' ? i : i.rawIngredient || `${i.quantity || ''} ${i.name || ''}`.trim(),
-          name: typeof i === 'string' ? i : (i.name || i.rawIngredient || null),
-          quantity: typeof i === 'string' ? null : i.quantity || null,
-          note: typeof i === 'string' ? null : i.note || null,
-        }));
+        merged.ingredients = fields.ingredients.map(toRecipeIngredient);
       }
 
       const recipe = await this.client.createRecipe(merged);

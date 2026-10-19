@@ -71,25 +71,23 @@ Manage shopping lists and items.
 
 ## `recipes`
 
-Manage AnyList recipes, including URL import and text parsing.
+Manage AnyList recipes. Ingredients have separate fields: `name` (only what you buy), `quantity` (amount and size), `note` (prep), and `is_heading` (a section label like "Chicken", never shoppable; its quantity and note are dropped).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | enum | Yes | See actions below |
-| `name` | string | For most actions | Recipe name |
+| `name` | string | For get, update, delete | Recipe name |
+| `recipes` | array | For create | `[{ name, ingredients, steps, note, source_name, source_url, prep_time, cook_time, servings }]` |
 | `new_name` | string | No | Rename the recipe (update only) |
 | `search` | string | No | Filter recipes by name (list only) |
-| `ingredients` | array | No | `[{ name, quantity }]` (create, update — replaces list on update) |
-| `steps` | string[] | No | Preparation steps (create, update — replaces list on update) |
-| `note` | string | No | Recipe notes (create, update) |
-| `source_name` | string | No | Source attribution (create, update) |
-| `source_url` | string | No | Source URL (create, update) |
-| `prep_time` | number | No | Prep time in minutes (create, update) |
-| `cook_time` | number | No | Cook time in minutes (create, update) |
-| `servings` | string | No | e.g. `"4"` or `"4-6"` (create, update) |
-| `url` | string | For import/normalize | URL to fetch recipe from |
-| `text` | string | For normalize | Raw recipe text to parse |
-| `save` | boolean | No | Save normalized result to AnyList (normalize only) |
+| `ingredients` | array | No | `[{ name, quantity?, note?, is_heading? }]` (update — replaces list) |
+| `steps` | string[] | No | Preparation steps (update — replaces list) |
+| `note` | string | No | Recipe notes (update) |
+| `source_name` | string | No | Source attribution (update) |
+| `source_url` | string | No | Source URL (update) |
+| `prep_time` | number | No | Prep time in minutes (update) |
+| `cook_time` | number | No | Cook time in minutes (update) |
+| `servings` | string | No | e.g. `"4"` or `"4-6"` (update) |
 
 **Actions:**
 
@@ -100,20 +98,24 @@ Manage AnyList recipes, including URL import and text parsing.
 // Search recipes
 { "name": "recipes", "arguments": { "action": "list", "search": "chicken" } }
 
-// Get full details — ingredients and steps
+// Get full details — ingredients (headings print as `## Heading`) and steps
 { "name": "recipes", "arguments": { "action": "get", "name": "Chicken Tikka Masala" } }
 
-// Create a recipe
+// Create recipes in one call. Returns one line per recipe:
+// "created <name> (id <id>)", "existing <name> (id <id>)" or "failed <name>: <reason>".
+// A recipe whose source_url or name (ignoring case and outer spaces) already exists is skipped.
 { "name": "recipes", "arguments": {
     "action": "create",
-    "name": "Simple Pasta",
-    "ingredients": [
-      { "name": "spaghetti", "quantity": "1 lb" },
-      { "name": "garlic cloves", "quantity": "2" },
-      { "name": "olive oil", "quantity": "1/4 cup" }
-    ],
-    "steps": ["Boil pasta", "Sauté garlic in oil", "Toss together"],
-    "servings": "4"
+    "recipes": [{
+      "name": "Simple Pasta",
+      "ingredients": [
+        { "name": "Pasta", "is_heading": true },
+        { "name": "spaghetti", "quantity": "1 lb" },
+        { "name": "garlic cloves", "quantity": "2", "note": "minced" }
+      ],
+      "steps": ["Boil pasta", "Sauté garlic in oil", "Toss together"],
+      "servings": "4"
+    }]
 } }
 
 // Partially update a recipe — only the fields you pass change; the rest
@@ -126,13 +128,6 @@ Manage AnyList recipes, including URL import and text parsing.
 
 // Delete a recipe
 { "name": "recipes", "arguments": { "action": "delete", "name": "Simple Pasta" } }
-
-// Import a recipe from a website URL
-{ "name": "recipes", "arguments": { "action": "import_url", "url": "https://..." } }
-
-// Parse and preview a recipe without saving (set save=true to also save)
-{ "name": "recipes", "arguments": { "action": "normalize", "url": "https://..." } }
-{ "name": "recipes", "arguments": { "action": "normalize", "text": "Pasta\n\n1 lb spaghetti\n\n1. Boil pasta", "save": true } }
 ```
 
 ---

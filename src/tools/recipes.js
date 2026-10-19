@@ -1,46 +1,73 @@
 import { z } from "zod";
-import { textResponse, errorResponse } from "./helpers.js";
+import { textResponse, errorResponse, runBatch } from "./helpers.js";
 import { createElicitationHelpers } from "./elicitation.js";
-import { normalizeRecipe } from "../recipe-normalizer.js";
 
 const toMinutes = (seconds) => Math.round(seconds / 60);
 const toSeconds = (minutes) => Math.round(minutes * 60);
 
+const ingredientSchema = z.object({
+  name: z.string().describe("Only what you buy, e.g. 'chicken breasts'. For a heading, the section label, e.g. 'Chicken'."),
+  quantity: z.string().optional().describe("Amount and size, e.g. '2 large' or '1 cup'. Ignored for headings."),
+  note: z.string().optional().describe("Prep, e.g. 'butterflied and pounded to 1/2 inch'. Ignored for headings."),
+  is_heading: z.boolean().optional().describe("True for a section label like 'Chicken' or 'Dressing'. Never shoppable."),
+});
+
+const recipeInputSchema = z.object({
+  name: z.string().describe("Recipe name"),
+  ingredients: z.array(ingredientSchema).optional(),
+  steps: z.array(z.string()).optional().describe("Preparation steps in order"),
+  note: z.string().optional(),
+  source_name: z.string().optional(),
+  source_url: z.string().optional(),
+  prep_time: z.number().optional().describe("Prep time in minutes"),
+  cook_time: z.number().optional().describe("Cook time in minutes"),
+  servings: z.string().optional().describe("Servings, e.g. '4' or '4-6'"),
+});
+
+// A heading keeps its name only, so it can never carry a quantity or note into the grocery list.
+function toIngredient(i) {
+  const name = i.name.trim();
+  if (i.is_heading) {
+    return { name, quantity: null, note: null, isHeading: true, rawIngredient: name };
+  }
+  const quantity = i.quantity || null;
+  const note = i.note || null;
+  const base = [quantity, name].filter(Boolean).join(" ");
+  return { name, quantity, note, isHeading: false, rawIngredient: note ? `${base}, ${note}` : base };
+}
+
+const norm = (s) => String(s ?? "").trim().toLowerCase();
+
 export function register(server, getClient) {
-  const { elicitRequiredField, elicitConfirmation } = createElicitationHelpers(server);
+  const { elicitRequiredField } = createElicitationHelpers(server);
 
   server.registerTool("recipes", {
     title: "Recipes",
     description: `Manage AnyList recipes. Actions:
 - list: Browse recipes (returns summaries: name, rating, times, servings). Use 'search' to filter.
 - get: Get full recipe details (ingredients, steps) by name
-- create: Create a new recipe
+- create: Create one or more recipes. Pass recipes: [{name, ingredients, steps, ...}]. Recipes whose source_url or name already exists (ignoring case and outer spaces) are skipped and reported as existing. Returns one line per recipe.
 - update: Partially update an existing recipe by name (only the fields you pass change; the rest are preserved). Pass new_name to rename it.
 - delete: Delete a recipe by name
-- import_url: Import a recipe from a website URL (parses ingredients, steps, etc.)
-- normalize: Preview/parse a recipe from a URL or raw text without saving (set save=true to also save)`,
+
+Ingredients have separate fields: name (only what you buy), quantity (amount and size), note (prep), and is_heading (a section label like "Chicken", never shoppable).`,
     inputSchema: {
-      action: z.enum(["list", "get", "create", "update", "delete", "import_url", "normalize"]).describe("The recipe action to perform"),
-      name: z.string().optional().describe("Recipe name (required for get, create, update, delete)"),
+      action: z.enum(["list", "get", "create", "update", "delete"]).describe("The recipe action to perform"),
+      name: z.string().optional().describe("Recipe name (required for get, update, delete)"),
       new_name: z.string().optional().describe("New name for the recipe (update only)"),
       search: z.string().optional().describe("Search query to filter recipes (list only)"),
-      ingredients: z.array(z.object({
-        name: z.string().describe("Ingredient name, e.g. 'flour'"),
-        quantity: z.string().describe("Quantity with unit, e.g. '2 cups'"),
-      })).optional().describe("Ingredients with name and quantity (create, update). On update, replaces the entire ingredient list."),
+      recipes: z.array(recipeInputSchema).optional().describe("Recipes to create (create only)"),
+      ingredients: z.array(ingredientSchema).optional().describe("Ingredients (update only). Replaces the entire ingredient list."),
       steps: z.array(z.string()).optional().describe("Preparation steps in order (create, update). On update, replaces the entire step list."),
-      note: z.string().optional().describe("Recipe notes (create, update)"),
-      source_name: z.string().optional().describe("Source name (create, update)"),
-      source_url: z.string().optional().describe("Source URL (create, update)"),
-      prep_time: z.number().optional().describe("Prep time in minutes (create, update)"),
-      cook_time: z.number().optional().describe("Cook time in minutes (create, update)"),
-      servings: z.string().optional().describe("Servings, e.g. '4' or '4-6' (create, update)"),
-      url: z.string().optional().describe("URL to import recipe from (import_url, normalize)"),
-      text: z.string().optional().describe("Raw recipe text to parse (normalize only)"),
-      save: z.boolean().optional().describe("If true, also save normalized recipe to AnyList (normalize only, default false)"),
+      note: z.string().optional().describe("Recipe notes (update)"),
+      source_name: z.string().optional().describe("Source name (update)"),
+      source_url: z.string().optional().describe("Source URL (update)"),
+      prep_time: z.number().optional().describe("Prep time in minutes (update)"),
+      cook_time: z.number().optional().describe("Cook time in minutes (update)"),
+      servings: z.string().optional().describe("Servings, e.g. '4' or '4-6' (update)"),
     }
   }, async (params) => {
-    const { action, name, new_name, search, ingredients, steps, note, source_name, source_url, prep_time, cook_time, servings, url, text: recipeText, save: saveRecipe } = params;
+    const { action, name, new_name, search, recipes: newRecipes, ingredients, steps, note, source_name, source_url, prep_time, cook_time, servings } = params;
     try {
       const client = await getClient();
       await client.connect(null);
@@ -75,7 +102,9 @@ export function register(server, getClient) {
           if (recipe.ingredients.length > 0) {
             text += `\n## Ingredients\n`;
             recipe.ingredients.forEach(i => {
-              text += `- ${i.rawIngredient || [i.quantity, i.name, i.note].filter(Boolean).join(' ')}\n`;
+              text += i.isHeading
+                ? `\n## ${i.name || i.rawIngredient}\n`
+                : `- ${i.rawIngredient || [i.quantity, i.name, i.note].filter(Boolean).join(' ')}\n`;
             });
           }
           if (recipe.preparationSteps.length > 0) {
@@ -85,31 +114,28 @@ export function register(server, getClient) {
           return textResponse(text);
         }
         case "create": {
-          let recipeName = name;
-          if (!recipeName) recipeName = await elicitRequiredField("name", "What should the recipe be called?");
-          const existingRecipes = await client.getRecipes(recipeName);
-          const exactMatch = existingRecipes.find(r => r.name.toLowerCase() === recipeName.toLowerCase());
-          if (exactMatch) {
-            const confirmed = await elicitConfirmation(`Recipe "${exactMatch.name}" already exists. Overwrite?`);
-            if (!confirmed) return textResponse(`Cancelled — recipe "${exactMatch.name}" was not overwritten.`);
-            await client.deleteRecipe(exactMatch.name);
-          }
-          const result = await client.createRecipe({
-            name: recipeName,
-            ingredients: (ingredients || []).map(i => ({
-              name: i.name,
-              quantity: i.quantity,
-              rawIngredient: `${i.quantity} ${i.name}`.trim(),
-            })),
-            preparationSteps: steps || [],
-            note: note || null,
-            sourceName: source_name || null,
-            sourceUrl: source_url || null,
-            prepTime: prep_time ? toSeconds(prep_time) : null,
-            cookTime: cook_time ? toSeconds(cook_time) : null,
-            servings: servings || null,
+          if (!newRecipes || newRecipes.length === 0) throw new Error('Action "create" requires a non-empty "recipes" array');
+          // Read the existing recipes once; recipes created in this call join the list.
+          const known = (await client.getRecipes()).map(r => ({ identifier: r.identifier, name: r.name, sourceUrl: r.sourceUrl }));
+          return await runBatch(newRecipes, r => r.name, async (r) => {
+            const dup = known.find(k =>
+              (r.source_url && k.sourceUrl && norm(k.sourceUrl) === norm(r.source_url)) ||
+              norm(k.name) === norm(r.name));
+            if (dup) return `existing ${dup.name} (id ${dup.identifier})`;
+            const result = await client.createRecipe({
+              name: r.name.trim(),
+              ingredients: (r.ingredients || []).map(toIngredient),
+              preparationSteps: r.steps || [],
+              note: r.note || null,
+              sourceName: r.source_name || null,
+              sourceUrl: r.source_url || null,
+              prepTime: r.prep_time ? toSeconds(r.prep_time) : null,
+              cookTime: r.cook_time ? toSeconds(r.cook_time) : null,
+              servings: r.servings || null,
+            });
+            known.push({ identifier: result.identifier, name: result.name, sourceUrl: r.source_url });
+            return `created ${result.name} (id ${result.identifier})`;
           });
-          return textResponse(`Created recipe "${result.name}"`);
         }
         case "update": {
           let updateRecipeName = name;
@@ -122,11 +148,7 @@ export function register(server, getClient) {
             fields.name = new_name;
           }
           if (ingredients !== undefined) {
-            fields.ingredients = ingredients.map(i => ({
-              name: i.name,
-              quantity: i.quantity,
-              rawIngredient: `${i.quantity} ${i.name}`.trim(),
-            }));
+            fields.ingredients = ingredients.map(toIngredient);
           }
           if (steps !== undefined) fields.preparationSteps = steps;
           if (note !== undefined) fields.note = note;
@@ -147,54 +169,6 @@ export function register(server, getClient) {
           if (!deleteRecipeName) deleteRecipeName = await elicitRequiredField("name", "Which recipe would you like to delete?");
           await client.deleteRecipe(deleteRecipeName);
           return textResponse(`Deleted recipe "${deleteRecipeName}"`);
-        }
-        case "import_url": {
-          let importUrl = url;
-          if (!importUrl) importUrl = await elicitRequiredField("url", "What URL would you like to import a recipe from?");
-          const result = await client.importRecipeFromUrl(importUrl);
-          let importText = `Imported recipe "${result.name}"\n`;
-          importText += `- ${result.ingredientCount} ingredients, ${result.stepCount} steps\n`;
-          if (result.source) importText += `- Source: ${result.source}\n`;
-          if (result.sourceUrl) importText += `- URL: ${result.sourceUrl}\n`;
-          if (result.method) importText += `- Method: ${result.method}\n`;
-          return textResponse(importText);
-        }
-        case "normalize": {
-          if (!url && !recipeText) {
-            throw new Error('Action "normalize" requires either "url" or "text" parameter');
-          }
-          const input = {};
-          if (url) input.url = url;
-          if (recipeText) input.text = recipeText;
-          const normalized = await normalizeRecipe(input);
-
-          let output = `# ${normalized.name}\n\n`;
-          if (normalized.sourceName) output += `Source: ${normalized.sourceName}\n`;
-          if (normalized.sourceUrl) output += `URL: ${normalized.sourceUrl}\n`;
-          if (normalized.prepTime) output += `Prep: ${normalized.prepTime}\n`;
-          if (normalized.cookTime) output += `Cook: ${normalized.cookTime}\n`;
-          if (normalized.servings) output += `Servings: ${normalized.servings}\n`;
-          if (normalized.note) output += `Note: ${normalized.note}\n`;
-          output += `\n## Ingredients (${normalized.ingredients.length})\n`;
-          normalized.ingredients.forEach(i => { output += `- ${i.rawIngredient}\n`; });
-          output += `\n## Steps (${normalized.preparationSteps.length})\n`;
-          normalized.preparationSteps.forEach((s, idx) => { output += `${idx + 1}. ${s}\n`; });
-
-          if (saveRecipe) {
-            const created = await client.createRecipe({
-              name: normalized.name,
-              ingredients: normalized.ingredients,
-              preparationSteps: normalized.preparationSteps,
-              note: normalized.note,
-              sourceName: normalized.sourceName,
-              sourceUrl: normalized.sourceUrl,
-              prepTime: normalized.prepTime,
-              cookTime: normalized.cookTime,
-              servings: normalized.servings,
-            });
-            output += `\n✅ Saved to AnyList as "${created.name}"`;
-          }
-          return textResponse(output);
         }
       }
     } catch (error) {

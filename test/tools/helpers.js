@@ -132,7 +132,7 @@ export class MockAnyListClient {
 
   async createRecipe(opts) {
     this._recipes.push(opts);
-    return { identifier: 'r-1', name: opts.name };
+    return { identifier: `r-${this._recipes.length}`, name: opts.name };
   }
 
   async updateRecipe(name, fields = {}) {
