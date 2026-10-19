@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { textResponse, errorResponse } from "./helpers.js";
+import { textResponse, errorResponse, runBatch } from "./helpers.js";
 import { createElicitationHelpers } from "./elicitation.js";
 
 // Default categories recognized by anylist.
@@ -16,9 +16,15 @@ function buildDescription(stores) {
 - list_items: Show items on a list (grouped by category)
 - add_item: Add an item to a list
 - add_items: Add several items to a list in one call (use this instead of repeating add_item)
-- check_item: Check off (complete) an item
-- uncheck_item: Uncheck a previously checked-off item (make it active again)
-- delete_item: Permanently remove an item from a list
+- check_item: Check off items. Pass names: [...] (partial names match)
+- uncheck_item: Uncheck checked-off items (make them active again). Pass names: [...]
+- delete_item: Permanently remove items from a list. Pass names: [...]
+- update_items: Change quantity and/or notes of existing items. Pass items: [{name, quantity?, notes?}]
+- uncheck_all: Uncheck every item on the list
+- create_category: Add custom categories. Pass categories: [{name}]
+- rename_category: Rename custom categories. Pass categories: [{name, new_name}]
+- delete_category: Delete custom categories. Pass categories: [{name}]
+Batch actions return one line per change; a failed change does not stop the others.
 - get_favorites: Get favorite items for a list
 - get_recents: Get recently added items for a list
 - list_stores: list stores available for the list (if any)`;
@@ -38,6 +44,16 @@ async function validateStoreName(client, storeName) {
   return { valid: true, message: null };
 }
 
+function requireNames(names, action) {
+  if (!names || names.length === 0) throw new Error(`Action "${action}" requires a non-empty "names" array`);
+  return names;
+}
+
+function requireCategories(categories, action) {
+  if (!categories || categories.length === 0) throw new Error(`Action "${action}" requires a non-empty "categories" array`);
+  return categories;
+}
+
 export function register(server, getClient) {
   const { elicitListName, elicitItemChoice, elicitRequiredField } = createElicitationHelpers(server);
 
@@ -51,7 +67,7 @@ export function register(server, getClient) {
 
   async function resolveItemName(client, itemName) {
     const exact = client.targetList.getItemByName(itemName);
-    if (exact) return itemName;
+    if (exact) return exact.name;
     const matches = findPartialMatches(client, itemName);
     if (matches.length === 0) throw new Error(`Item "${itemName}" not found in list`);
     if (matches.length === 1) return matches[0];
@@ -62,7 +78,7 @@ export function register(server, getClient) {
   // used by uncheck_item, which only makes sense on an already-checked item.
   async function resolveCheckedItemName(client, itemName) {
     const exact = client.targetList.getItemByName(itemName);
-    if (exact && exact.checked) return itemName;
+    if (exact && exact.checked) return exact.name;
     const matches = findPartialMatches(client, itemName, true);
     if (matches.length === 0) throw new Error(`No checked-off item matching "${itemName}" found in list`);
     if (matches.length === 1) return matches[0];
@@ -76,9 +92,15 @@ export function register(server, getClient) {
     description: buildDescription([]),
     inputSchema: {
       action: z.enum(["list_lists", "list_items", "add_item", "add_items",
-        "set_item_store", "check_item", "uncheck_item", "delete_item", "get_favorites", "get_recents", "list_stores"]).describe("The shopping action to perform"),
+        "set_item_store", "check_item", "uncheck_item", "delete_item", "update_items", "uncheck_all",
+        "create_category", "rename_category", "delete_category", "get_favorites", "get_recents", "list_stores"]).describe("The shopping action to perform"),
       list_name: z.string().optional().describe("Name of the list (defaults to configured default list)"),
-      name: z.string().optional().describe("Item name (required for add_item, set_item_store, check_item, uncheck_item, delete_item)"),
+      name: z.string().optional().describe("Item name (required for add_item, set_item_store)"),
+      names: z.array(z.string()).optional().describe("Item names (check_item, uncheck_item, delete_item)"),
+      categories: z.array(z.object({
+        name: z.string(),
+        new_name: z.string().optional().describe("New name (rename_category only)"),
+      })).optional().describe("Categories to create, rename or delete (create_category, rename_category, delete_category)"),
       items: z.array(z.union([
         z.string(),
         z.object({
@@ -88,7 +110,7 @@ export function register(server, getClient) {
           category: z.enum(valid_categories).optional(),
           store_name: z.string().optional(),
         })
-      ])).optional().describe("Items to add (add_items only). Each entry is either a plain item name or an object with name/quantity/notes/category/store_name"),
+      ])).optional().describe("Items to add (add_items) or change (update_items). Each entry is either a plain item name or an object with name/quantity/notes/category/store_name"),
       quantity: z.union([z.number().min(1), z.string().min(1)]).optional().describe("Item quantity, e.g. 2 or \"500 g\" (add_item only, defaults to 1)"),
       notes: z.string().optional().describe("Notes for the item (add_item only)"),
       include_checked: z.boolean().optional().describe("Include checked-off items (list_items only, default false)"),
@@ -196,28 +218,73 @@ export function register(server, getClient) {
           return failed.length > 0 ? errorResponse(summary.join("\n")) : textResponse(summary.join("\n"));
         }
         case "check_item": {
-          let itemName = name;
-          if (!itemName) itemName = await elicitRequiredField("name", "What item would you like to check off?");
+          const targets = requireNames(params.names, action);
           await client.connect(list_name);
-          const resolvedCheck = await resolveItemName(client, itemName);
-          await client.removeItem(resolvedCheck);
-          return textResponse(`Successfully checked off "${resolvedCheck}" from list "${client.targetList.name}"`);
+          return await runBatch(targets, n => n, async (n) => {
+            const resolved = await resolveItemName(client, n);
+            await client.removeItem(resolved);
+            return `checked ${resolved}`;
+          });
         }
         case "uncheck_item": {
-          let itemName = name;
-          if (!itemName) itemName = await elicitRequiredField("name", "What item would you like to uncheck?");
+          const targets = requireNames(params.names, action);
           await client.connect(list_name);
-          const resolvedUncheck = await resolveCheckedItemName(client, itemName);
-          await client.uncheckItem(resolvedUncheck);
-          return textResponse(`Successfully unchecked "${resolvedUncheck}" on list "${client.targetList.name}"`);
+          return await runBatch(targets, n => n, async (n) => {
+            const resolved = await resolveCheckedItemName(client, n);
+            await client.uncheckItem(resolved);
+            return `unchecked ${resolved}`;
+          });
         }
         case "delete_item": {
-          let itemName = name;
-          if (!itemName) itemName = await elicitRequiredField("name", "What item would you like to delete?");
+          const targets = requireNames(params.names, action);
           await client.connect(list_name);
-          const resolvedDelete = await resolveItemName(client, itemName);
-          await client.deleteItem(resolvedDelete);
-          return textResponse(`Successfully deleted "${resolvedDelete}" from list "${client.targetList.name}"`);
+          return await runBatch(targets, n => n, async (n) => {
+            const resolved = await resolveItemName(client, n);
+            await client.deleteItem(resolved);
+            return `deleted ${resolved}`;
+          });
+        }
+        case "update_items": {
+          const entries = params.items;
+          if (!entries || entries.length === 0) throw new Error(`Action "update_items" requires a non-empty "items" array`);
+          await client.connect(list_name);
+          return await runBatch(entries, e => (typeof e === "string" ? e : e.name), async (e) => {
+            if (typeof e === "string") throw new Error("needs quantity and/or notes");
+            if (e.quantity === undefined && e.notes === undefined) throw new Error("needs quantity and/or notes");
+            const resolved = await resolveItemName(client, e.name);
+            await client.updateItem(resolved, { quantity: e.quantity, notes: e.notes });
+            return `updated ${resolved}`;
+          });
+        }
+        case "uncheck_all": {
+          await client.connect(list_name);
+          await client.uncheckAll();
+          return textResponse(`unchecked all items on list "${client.targetList.name}"`);
+        }
+        case "create_category": {
+          const entries = requireCategories(params.categories, action);
+          await client.connect(list_name);
+          return await runBatch(entries, c => c.name, async (c) => {
+            await client.createCategory(c.name);
+            return `created category ${c.name}`;
+          });
+        }
+        case "rename_category": {
+          const entries = requireCategories(params.categories, action);
+          await client.connect(list_name);
+          return await runBatch(entries, c => c.name, async (c) => {
+            if (!c.new_name) throw new Error('"new_name" is required');
+            await client.renameCategory(c.name, c.new_name);
+            return `renamed category ${c.name} to ${c.new_name}`;
+          });
+        }
+        case "delete_category": {
+          const entries = requireCategories(params.categories, action);
+          await client.connect(list_name);
+          return await runBatch(entries, c => c.name, async (c) => {
+            await client.deleteCategory(c.name);
+            return `deleted category ${c.name}`;
+          });
         }
         case "get_favorites": {
           await client.connect(list_name || null);

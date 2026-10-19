@@ -147,56 +147,169 @@ describe('shopping tool', () => {
   describe('check_item', () => {
     it('checks off an existing item', async () => {
       client._items.push({ name: 'Milk', checked: false });
-      const result = await handlers.shopping({ action: 'check_item', name: 'Milk' });
-      assert.ok(result.content[0].text.includes('Successfully checked off'));
+      const result = await handlers.shopping({ action: 'check_item', names: ['Milk'] });
+      assert.equal(result.content[0].text, 'checked Milk');
       assert.equal(client._items[0].checked, true);
     });
 
-    it('returns error for non-existent item', async () => {
-      const result = await handlers.shopping({ action: 'check_item', name: 'Nonexistent' });
+    it('check_item checks 3 names in one call', async () => {
+      client._items.push({ name: 'Milk' }, { name: 'Eggs' }, { name: 'Bread' });
+      const result = await handlers.shopping({ action: 'check_item', names: ['Milk', 'eggs', 'Bread'] });
+      assert.equal(result.content[0].text, 'checked Milk\nchecked Eggs\nchecked Bread');
+      assert.ok(client._items.every(i => i.checked));
+    });
+
+    it('resolves partial names per entry', async () => {
+      client._items.push({ name: 'Whole Milk' });
+      const result = await handlers.shopping({ action: 'check_item', names: ['milk'] });
+      assert.equal(result.content[0].text, 'checked Whole Milk');
+    });
+
+    it('returns error when every name is unknown', async () => {
+      const result = await handlers.shopping({ action: 'check_item', names: ['Nonexistent'] });
       assert.equal(result.isError, true);
+      assert.ok(result.content[0].text.includes('failed Nonexistent'));
       assert.ok(result.content[0].text.includes('not found'));
+    });
+
+    it('requires a non-empty names array', async () => {
+      const result = await handlers.shopping({ action: 'check_item' });
+      assert.equal(result.isError, true);
+      assert.ok(result.content[0].text.includes('"names"'));
     });
   });
 
   describe('uncheck_item', () => {
     it('unchecks a checked-off item', async () => {
       client._items.push({ name: 'Milk', checked: true });
-      const result = await handlers.shopping({ action: 'uncheck_item', name: 'Milk' });
-      assert.ok(result.content[0].text.includes('Successfully unchecked'));
+      const result = await handlers.shopping({ action: 'uncheck_item', names: ['Milk'] });
+      assert.equal(result.content[0].text, 'unchecked Milk');
       assert.equal(client._items[0].checked, false);
     });
 
     it('resolves a checked item by partial name', async () => {
       client._items.push({ name: 'Whole Milk', checked: true });
-      const result = await handlers.shopping({ action: 'uncheck_item', name: 'milk' });
-      assert.ok(result.content[0].text.includes('Successfully unchecked'));
+      const result = await handlers.shopping({ action: 'uncheck_item', names: ['milk'] });
+      assert.equal(result.content[0].text, 'unchecked Whole Milk');
       assert.equal(client._items[0].checked, false);
     });
 
     it('returns error when no checked item matches', async () => {
       client._items.push({ name: 'Milk', checked: false });
-      const result = await handlers.shopping({ action: 'uncheck_item', name: 'Milk' });
+      const result = await handlers.shopping({ action: 'uncheck_item', names: ['Milk'] });
       assert.equal(result.isError, true);
       assert.ok(result.content[0].text.includes('No checked-off item'));
     });
 
     it('returns error for non-existent item', async () => {
-      const result = await handlers.shopping({ action: 'uncheck_item', name: 'Ghost' });
+      const result = await handlers.shopping({ action: 'uncheck_item', names: ['Ghost'] });
       assert.equal(result.isError, true);
+    });
+
+    it('unchecks several and reports the miss', async () => {
+      client._items.push({ name: 'Milk', checked: true }, { name: 'Eggs', checked: true });
+      const result = await handlers.shopping({ action: 'uncheck_item', names: ['Milk', 'Ghost', 'Eggs'] });
+      assert.notEqual(result.isError, true);
+      assert.ok(result.content[0].text.includes('failed Ghost'));
+      assert.ok(client._items.every(i => i.checked === false));
     });
   });
 
   describe('delete_item', () => {
     it('deletes an existing item', async () => {
       client._items.push({ name: 'Milk' });
-      const result = await handlers.shopping({ action: 'delete_item', name: 'Milk' });
-      assert.ok(result.content[0].text.includes('Successfully deleted'));
+      const result = await handlers.shopping({ action: 'delete_item', names: ['Milk'] });
+      assert.equal(result.content[0].text, 'deleted Milk');
       assert.equal(client._items.length, 0);
     });
 
+    it('delete_item reports one unknown name and deletes the rest', async () => {
+      client._items.push({ name: 'Milk' }, { name: 'Eggs' }, { name: 'Bread' }, { name: 'Jam' });
+      const result = await handlers.shopping({ action: 'delete_item', names: ['Milk', 'Eggs', 'Ghost', 'Bread'] });
+      assert.notEqual(result.isError, true);
+      const lines = result.content[0].text.split('\n');
+      assert.equal(lines.length, 4);
+      assert.ok(lines[2].startsWith('failed Ghost:'));
+      assert.deepEqual(client._items.map(i => i.name), ['Jam']);
+    });
+
     it('returns error for non-existent item', async () => {
-      const result = await handlers.shopping({ action: 'delete_item', name: 'Ghost' });
+      const result = await handlers.shopping({ action: 'delete_item', names: ['Ghost'] });
+      assert.equal(result.isError, true);
+    });
+  });
+
+  describe('update_items', () => {
+    it('update_items changes quantity and notes', async () => {
+      client._items.push({ name: 'Milk', quantity: 1 }, { name: 'Eggs', quantity: 1, notes: 'old' });
+      const result = await handlers.shopping({
+        action: 'update_items',
+        items: [{ name: 'Milk', quantity: '2 gallons' }, { name: 'Eggs', notes: 'organic' }],
+      });
+      assert.equal(result.content[0].text, 'updated Milk\nupdated Eggs');
+      assert.equal(client._items[0].quantity, '2 gallons');
+      assert.equal(client._items[0].notes, undefined);
+      assert.equal(client._items[1].notes, 'organic');
+      assert.equal(client._items[1].quantity, 1);
+    });
+
+    it('fails an unknown item and an entry with nothing to change, applies the rest', async () => {
+      client._items.push({ name: 'Milk' }, { name: 'Eggs' });
+      const result = await handlers.shopping({
+        action: 'update_items',
+        items: [{ name: 'Ghost', quantity: 2 }, { name: 'Milk' }, { name: 'Eggs', quantity: 3 }],
+      });
+      assert.notEqual(result.isError, true);
+      const lines = result.content[0].text.split('\n');
+      assert.ok(lines[0].startsWith('failed Ghost:'));
+      assert.ok(lines[1].startsWith('failed Milk:'));
+      assert.equal(lines[2], 'updated Eggs');
+      assert.equal(client._items[1].quantity, 3);
+    });
+  });
+
+  describe('uncheck_all', () => {
+    it('uncheck_all unchecks every item', async () => {
+      client._items.push({ name: 'Milk', checked: true }, { name: 'Eggs', checked: true });
+      const result = await handlers.shopping({ action: 'uncheck_all' });
+      assert.notEqual(result.isError, true);
+      assert.ok(client._items.every(i => i.checked === false));
+    });
+  });
+
+  describe('categories', () => {
+    it('create_category adds categories', async () => {
+      const result = await handlers.shopping({ action: 'create_category', categories: [{ name: 'Costco run' }, { name: 'Pharmacy' }] });
+      assert.equal(result.content[0].text, 'created category Costco run\ncreated category Pharmacy');
+      assert.deepEqual(client._categories, ['Costco run', 'Pharmacy']);
+    });
+
+    it('rename_category renames by name', async () => {
+      client._categories.push('Costco run');
+      const result = await handlers.shopping({ action: 'rename_category', categories: [{ name: 'costco run', new_name: 'Costco' }] });
+      assert.equal(result.content[0].text, 'renamed category costco run to Costco');
+      assert.deepEqual(client._categories, ['Costco']);
+    });
+
+    it('rename_category without new_name fails that entry', async () => {
+      client._categories.push('A');
+      const result = await handlers.shopping({ action: 'rename_category', categories: [{ name: 'A' }] });
+      assert.equal(result.isError, true);
+      assert.ok(result.content[0].text.includes('new_name'));
+    });
+
+    it('delete_category on an unknown name fails that entry', async () => {
+      client._categories.push('Keep', 'Drop');
+      const result = await handlers.shopping({ action: 'delete_category', categories: [{ name: 'Ghost' }, { name: 'Drop' }] });
+      assert.notEqual(result.isError, true);
+      const lines = result.content[0].text.split('\n');
+      assert.ok(lines[0].startsWith('failed Ghost:'));
+      assert.equal(lines[1], 'deleted category Drop');
+      assert.deepEqual(client._categories, ['Keep']);
+    });
+
+    it('delete_category is an error when every entry fails', async () => {
+      const result = await handlers.shopping({ action: 'delete_category', categories: [{ name: 'Ghost' }] });
       assert.equal(result.isError, true);
     });
   });

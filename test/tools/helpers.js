@@ -39,6 +39,7 @@ export class MockAnyListClient {
     this._collections = [];
     this._pendingImport = null;
     this._stores = [];
+    this._categories = [];
   }
 
   reset() {
@@ -55,6 +56,7 @@ export class MockAnyListClient {
     this._collections = [];
     this._pendingImport = null;
     this._stores = [];
+    this._categories = [];
   }
 
   async connect(listName = null) {
@@ -94,6 +96,33 @@ export class MockAnyListClient {
     const idx = this._items.findIndex(i => i.name === name);
     if (idx === -1) throw new Error(`Item "${name}" not found in list, so can't delete it`);
     this._items.splice(idx, 1);
+  }
+
+  async updateItem(name, { quantity, notes } = {}) {
+    const item = this._items.find(i => i.name === name);
+    if (!item) throw new Error(`Item "${name}" not found in list`);
+    if (quantity !== undefined) item.quantity = quantity;
+    if (notes !== undefined) item.notes = notes;
+  }
+
+  async uncheckAll() {
+    this._items.forEach(i => { i.checked = false; });
+  }
+
+  async createCategory(name) {
+    this._categories.push(name);
+  }
+
+  async renameCategory(oldName, newName) {
+    const idx = this._categories.findIndex(c => c.toLowerCase() === oldName.toLowerCase());
+    if (idx === -1) throw new Error(`Category "${oldName}" not found`);
+    this._categories[idx] = newName;
+  }
+
+  async deleteCategory(name) {
+    const idx = this._categories.findIndex(c => c.toLowerCase() === name.toLowerCase());
+    if (idx === -1) throw new Error(`Category "${name}" not found`);
+    this._categories.splice(idx, 1);
   }
 
   async getItems(includeChecked = false, includeNotes = false, includeStore = false) {

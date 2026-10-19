@@ -26,7 +26,10 @@ Manage shopping lists and items.
 |-----------|------|----------|-------------|
 | `action` | enum | Yes | See actions below |
 | `list_name` | string | No | Target list (defaults to configured default) |
-| `name` | string | For item actions | Item name |
+| `name` | string | For add_item, set_item_store | Item name |
+| `names` | string[] | For check_item, uncheck_item, delete_item | Item names (partial names match) |
+| `items` | array | For add_items, update_items | add_items: names or `{ name, quantity?, notes?, category?, store_name? }`. update_items: `{ name, quantity?, notes? }` |
+| `categories` | array | For category actions | create/delete: `[{ name }]`. rename: `[{ name, new_name }]` |
 | `quantity` | number | No | Item quantity (add_item only, default 1) |
 | `notes` | string | No | Item notes (add_item only) |
 | `include_checked` | boolean | No | Include checked-off items (list_items only) |
@@ -46,14 +49,28 @@ Manage shopping lists and items.
 // Add an item
 { "name": "shopping", "arguments": { "action": "add_item", "name": "Eggs", "quantity": 2, "notes": "organic", "store": "Costco"} }
 
-// Check off an item (supports partial name matching)
-{ "name": "shopping", "arguments": { "action": "check_item", "name": "Eggs" } }
+// Batch actions return one line per change ("checked Eggs", "failed Ghost: ...").
+// A failed change does not stop the others. The call is an error only when every change failed.
 
-// Uncheck a checked-off item (supports partial matching against checked items)
-{ "name": "shopping", "arguments": { "action": "uncheck_item", "name": "Eggs" } }
+// Check off items (supports partial name matching)
+{ "name": "shopping", "arguments": { "action": "check_item", "names": ["Eggs", "Milk"] } }
 
-// Delete an item permanently
-{ "name": "shopping", "arguments": { "action": "delete_item", "name": "Eggs" } }
+// Uncheck checked-off items (supports partial matching against checked items)
+{ "name": "shopping", "arguments": { "action": "uncheck_item", "names": ["Eggs"] } }
+
+// Delete items permanently
+{ "name": "shopping", "arguments": { "action": "delete_item", "names": ["Eggs", "Milk"] } }
+
+// Change quantity and/or notes of existing items
+{ "name": "shopping", "arguments": { "action": "update_items", "items": [{ "name": "Milk", "quantity": "2 gallons" }, { "name": "Eggs", "notes": "organic" }] } }
+
+// Uncheck every item on the list
+{ "name": "shopping", "arguments": { "action": "uncheck_all" } }
+
+// Custom categories
+{ "name": "shopping", "arguments": { "action": "create_category", "categories": [{ "name": "Costco run" }] } }
+{ "name": "shopping", "arguments": { "action": "rename_category", "categories": [{ "name": "Costco run", "new_name": "Costco" }] } }
+{ "name": "shopping", "arguments": { "action": "delete_category", "categories": [{ "name": "Costco" }] } }
 
 // Get favorite items for a list
 { "name": "shopping", "arguments": { "action": "get_favorites" } }

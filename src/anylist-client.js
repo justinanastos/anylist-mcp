@@ -267,6 +267,85 @@ class AnyListClient {
     }
   }
 
+  // Quantity on an existing item goes through item.save(); see the known limitation above addItem().
+  async updateItem(itemName, { quantity, notes } = {}) {
+    if (!this.targetList) {
+      throw new Error('Not connected to any list. Call connect() first.');
+    }
+    try {
+      const item = this.targetList.getItemByName(itemName);
+      if (!item) {
+        throw new Error(`Item "${itemName}" not found in list`);
+      }
+      if (quantity !== undefined) item.quantity = quantity;
+      if (notes !== undefined) item.details = notes;
+      await item.save();
+      console.error(`Updated item: ${item.name}`);
+    } catch (error) {
+      throw new Error(`Failed to update item "${itemName}": ${error.message}`);
+    }
+  }
+
+  async uncheckAll() {
+    if (!this.targetList) {
+      throw new Error('Not connected to any list. Call connect() first.');
+    }
+    try {
+      await this.targetList.uncheckAll();
+      // The library does not touch its local copy; mirror the server.
+      for (const item of this.targetList.items) item._checked = false;
+      console.error(`Unchecked all items on list: ${this.targetList.name}`);
+    } catch (error) {
+      throw new Error(`Failed to uncheck all items: ${error.message}`);
+    }
+  }
+
+  // ===== CATEGORIES =====
+
+  async createCategory(name) {
+    if (!this.targetList) {
+      throw new Error('Not connected to any list. Call connect() first.');
+    }
+    try {
+      await this.targetList.createCategory({ name });
+      console.error(`Created category: ${name}`);
+    } catch (error) {
+      throw new Error(`Failed to create category "${name}": ${error.message}`);
+    }
+  }
+
+  async renameCategory(oldName, newName) {
+    if (!this.targetList) {
+      throw new Error('Not connected to any list. Call connect() first.');
+    }
+    try {
+      const found = this.targetList.findCategoryByName(oldName);
+      if (!found) {
+        throw new Error(`Category "${oldName}" not found in list "${this.targetList.name}"`);
+      }
+      await this.targetList.renameCategory(found.category.identifier, newName);
+      console.error(`Renamed category: ${oldName} -> ${newName}`);
+    } catch (error) {
+      throw new Error(`Failed to rename category "${oldName}": ${error.message}`);
+    }
+  }
+
+  async deleteCategory(name) {
+    if (!this.targetList) {
+      throw new Error('Not connected to any list. Call connect() first.');
+    }
+    try {
+      const found = this.targetList.findCategoryByName(name);
+      if (!found) {
+        throw new Error(`Category "${name}" not found in list "${this.targetList.name}"`);
+      }
+      await this.targetList.removeCategory(found.category.identifier);
+      console.error(`Deleted category: ${name}`);
+    } catch (error) {
+      throw new Error(`Failed to delete category "${name}": ${error.message}`);
+    }
+  }
+
   async getItems(includeChecked = false, includeNotes = false) {
     if (!this.targetList) {
       const error = new Error('Not connected to any list. Call connect() first.');
