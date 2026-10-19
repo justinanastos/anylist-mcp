@@ -12,8 +12,10 @@
     "pack": "mcpb pack",
     "start:http": "node src/http/index.js",
     "dev:http": "node --watch src/http/index.js",
-    "test": "node --test test/*.test.js test/tools/*.test.js",
-    "release": "semantic-release"
+    "test": "node --test test/*.test.js test/tools/*.test.js \"test/remote/*.test.ts\"",
+    "release": "semantic-release",
+    "start:remote": "node src/remote/main.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "mcp",
@@ -25,19 +27,30 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/mcpb": "^2.1.2",
+    "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/server": "^2.3.1",
     "anylist": "^0.8.5",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "google-auth-library": "^10.6.2"
+    "google-auth-library": "^10.6.2",
+    "jose": "^6.2.12",
+    "oidc-provider": "^9.12.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.1",
-    "semantic-release": "^25.0.9"
+    "@types/node": "^26.6.5",
+    "@types/oidc-provider": "^9.12.1",
+    "semantic-release": "^25.0.9",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=26"
   }
 }
