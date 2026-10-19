@@ -195,6 +195,14 @@ describe('meal_plan tool', () => {
       assert.deepEqual(client._events.map(e => e.title).sort(), ['A', 'C']);
     });
 
+    it('update_event reports an old event that could not be removed, and still succeeds', async () => {
+      client._events.push({ identifier: 'e1', date: '2025-03-01', title: 'Tikka' });
+      client.deleteMealPlanEvent = async () => { throw new Error('server said no'); };
+      const result = await handlers.meal_plan({ action: 'update_event', events: [{ event_id: 'e1', title: 'Curry' }] });
+      assert.notEqual(result.isError, true);
+      assert.match(result.content[0].text, /^updated e1 \(new id \S+\), old event not removed: server said no$/);
+    });
+
     it('is an error only when every update failed', async () => {
       const result = await handlers.meal_plan({ action: 'update_event', events: [{ event_id: 'nope', title: 'B' }] });
       assert.equal(result.isError, true);

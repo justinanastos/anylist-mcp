@@ -13,7 +13,7 @@
 | Default list | `ANYLIST_LIST_NAME=Grocery List` in the plist |
 | AnyList login | 1Password item `AnyList` in vault `Mac Mini`, read by `op` once at startup |
 | Log | `/tmp/anylist-mcp.log`. It records method, path pattern, status and time, never query strings. |
-| Private data | `data/`, gitignored. `data/oauth/` holds live tokens, client secrets and the signing key. |
+| Private data | `data/`, gitignored. `data/oauth/` holds live tokens, client secrets and the signing key. Outside the repo, anylist-js writes `~/.anylist_credentials` (access and refresh tokens, encrypted with the AnyList password). Deleting it forces a fresh login. |
 | Tunnel | The shared tunnel, rule `anylist.anastos-home.net` to `http://localhost:8441` in `~/.cloudflared/config.yml` |
 | Access app | `anylist-signin`, reusable policy `me-only`, on `/interaction/*` only, 24-hour session |
 | Skill | `skill/anylist-meal-planning/`. Every push to `main` touching `skill/` rebuilds the zip and replaces the `skill` release. Download: https://github.com/justinanastos/anylist-mcp/releases/download/skill/anylist-meal-planning-skill.zip |

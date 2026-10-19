@@ -91,7 +91,7 @@ describe('shopping tool', () => {
       };
       const result = await handlers.shopping({ action: 'add_items', items: ['Milk', 'Eggs', 'Bread'] });
       const text = result.content[0].text;
-      assert.equal(result.isError, true);
+      assert.notEqual(result.isError, true);
       assert.ok(text.includes('Added 2 of 3 items'));
       assert.ok(text.includes('✓ Milk'));
       assert.ok(text.includes('✗ Eggs: boom'));
@@ -104,7 +104,7 @@ describe('shopping tool', () => {
         action: 'add_items',
         items: [{ name: 'Soda', category: 'invalid-category' }, 'Milk'],
       });
-      assert.equal(result.isError, true);
+      assert.notEqual(result.isError, true);
       assert.ok(result.content[0].text.includes('invalid category "invalid-category"'));
       assert.deepEqual(client._items.map(i => i.name), ['Milk']);
     });
@@ -121,9 +121,19 @@ describe('shopping tool', () => {
         action: 'add_items',
         items: [{ name: 'Milk', store_name: 'Nowhere' }, 'Eggs'],
       });
-      assert.equal(result.isError, true);
+      assert.notEqual(result.isError, true);
       assert.ok(result.content[0].text.includes('Store "Nowhere" not found'));
       assert.deepEqual(client._items.map(i => i.name), ['Eggs']);
+    });
+
+    it('is an error only when every item failed', async () => {
+      const result = await handlers.shopping({
+        action: 'add_items',
+        items: [{ name: 'Soda', category: 'invalid-category' }, { name: 'Pop', category: 'nope' }],
+      });
+      assert.equal(result.isError, true);
+      assert.ok(result.content[0].text.includes('Added 0 of 2 items'));
+      assert.deepEqual(client._items, []);
     });
 
     it('errors on a missing or empty items array', async () => {

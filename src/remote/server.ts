@@ -71,6 +71,15 @@ function routePattern(path: string): string {
 
 const INTERACTION_PATH = /^\/interaction\/[\w-]+$/;
 
+/** Makes every tool registered on `server` after this call hold `lock` for its whole run. */
+export function lockTools(server: McpServer, lock: Guard): void {
+  const register = server.registerTool.bind(server) as (...args: unknown[]) => unknown;
+  Object.assign(server, {
+    registerTool: (name: unknown, config: unknown, handler: (...a: unknown[]) => unknown) =>
+      register(name, config, (...a: unknown[]) => lock(async () => handler(...a))),
+  });
+}
+
 /** Routes one HTTP server: OAuth (oidc-provider), `/interaction/*`, and `/mcp`. */
 export async function createApp(options: StartOptions): Promise<Server> {
   const { config } = options;
@@ -115,11 +124,7 @@ export async function createApp(options: StartOptions): Promise<Server> {
   /** One server per request. Every tool handler holds the shared lock for its whole run. */
   const buildMcpServer = (): McpServer => {
     const server = new McpServer({ name: "anylist", version: "1.0.0" });
-    const register = server.registerTool.bind(server) as (...args: unknown[]) => unknown;
-    Object.assign(server, {
-      registerTool: (name: unknown, config: unknown, handler: (...a: unknown[]) => unknown) =>
-        register(name, config, (...a: unknown[]) => lock(async () => handler(...a))),
-    });
+    lockTools(server, lock);
     (registerAllTools as (s: McpServer, g: GetClient) => void)(server, tools);
     return server;
   };

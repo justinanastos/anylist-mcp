@@ -51,6 +51,7 @@ class AnyListClient {
       return true;
     }
 
+    let loggedIn = Boolean(this.client);
     try {
       // Create AnyList client if not already authenticated
       if (!this.client) {
@@ -65,6 +66,7 @@ class AnyListClient {
         console.error('Successfully authenticated with AnyList');
 
         await this.client.getLists();
+        loggedIn = true;
       }
 
       // Find the target list
@@ -82,6 +84,12 @@ class AnyListClient {
       return true;
 
     } catch (error) {
+      // A client that never finished logging in must not stick, or every later call skips login.
+      if (!loggedIn) {
+        const half = this.client;
+        this.client = null;
+        try { await half?.teardown(); } catch { /* nothing to close */ }
+      }
       const wrappedError = new Error(`Failed to connect to AnyList: ${error.message}`);
       console.error(wrappedError.message);
       throw wrappedError;
@@ -771,7 +779,7 @@ class AnyListClient {
     }
   }
 
-  async createMealPlanEvent({ date, title = null, recipeId = null, labelId = null, details = null }) {
+  async createMealPlanEvent({ date, title = null, recipeId = null, labelId = null, details = null, recipeScaleFactor = null, orderAddedSortIndex = null }) {
     if (!this.client) {
       throw new Error('Not connected. Call connect() first.');
     }
@@ -781,6 +789,8 @@ class AnyListClient {
       if (recipeId) eventObj.recipeId = recipeId;
       if (labelId) eventObj.labelId = labelId;
       if (details) eventObj.details = details;
+      if (recipeScaleFactor != null) eventObj.recipeScaleFactor = recipeScaleFactor;
+      if (orderAddedSortIndex != null) eventObj.orderAddedSortIndex = orderAddedSortIndex;
       const event = await this.client.createEvent(eventObj);
       await event.save();
       console.error(`Created meal plan event for ${date}`);
@@ -794,6 +804,9 @@ class AnyListClient {
    * Move or edit an event by recreating it: AnyList's server ignores field changes
    * sent via `set-event-details`. Creates the merged event first, then deletes the
    * old one, so a failure never loses the meal. The event gets a new identifier.
+   * recipeScaleFactor and orderAddedSortIndex carry over; the leftover and icon flags do not.
+   * If the old event cannot be deleted, the new one stands and the result has
+   * `oldEventNotRemoved: <reason>`.
    * `fields` is a subset of { date: 'YYYY-MM-DD', title, recipeId, labelId, details };
    * `undefined` keys keep the existing value.
    */
@@ -807,10 +820,9 @@ class AnyListClient {
       if (!event) {
         throw new Error(`Meal plan event "${eventId}" not found`);
       }
+      // anylist-js parses the server's YYYY-MM-DD as UTC midnight, so read it back in UTC.
       const d = event.date;
-      const existingDate = d instanceof Date
-        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        : String(d);
+      const existingDate = d instanceof Date ? d.toISOString().slice(0, 10) : String(d);
       const pick = (key) => (fields[key] !== undefined ? fields[key] : event[key]);
       const created = await this.createMealPlanEvent({
         date: fields.date !== undefined ? fields.date : existingDate,
@@ -818,10 +830,17 @@ class AnyListClient {
         recipeId: pick('recipeId'),
         labelId: pick('labelId'),
         details: pick('details'),
+        recipeScaleFactor: event.recipeScaleFactor,
+        orderAddedSortIndex: event.orderAddedSortIndex,
       });
-      await this.deleteMealPlanEvent(eventId);
+      const result = { identifier: created.identifier, previousIdentifier: eventId };
+      try {
+        await this.deleteMealPlanEvent(eventId);
+      } catch (deleteError) {
+        result.oldEventNotRemoved = deleteError.message;
+      }
       console.error(`Updated meal plan event: ${eventId} -> ${created.identifier}`);
-      return { identifier: created.identifier, previousIdentifier: eventId };
+      return result;
     } catch (error) {
       throw new Error(`Failed to update meal plan event: ${error.message}`);
     }

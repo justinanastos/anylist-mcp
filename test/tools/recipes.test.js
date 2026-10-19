@@ -1,5 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { z } from 'zod';
 import { register } from '../../src/tools/recipes.js';
 import { MockAnyListClient, createMockServer } from './helpers.js';
 
@@ -333,6 +334,41 @@ describe('recipes tool', () => {
     it('returns error for non-existent recipe', async () => {
       const result = await handlers.recipes({ action: 'delete', name: 'Nope' });
       assert.equal(result.isError, true);
+    });
+  });
+
+  describe('input cleanup', () => {
+    it('schema trims recipe and ingredient names and refuses blank ones', async () => {
+      let config;
+      const { server } = createMockServer();
+      const registerTool = server.registerTool;
+      server.registerTool = (name, cfg, handler) => { config = cfg; return registerTool(name, cfg, handler); };
+      register(server, () => Promise.resolve(client));
+      const schema = z.object(config.inputSchema);
+      const parsed = schema.parse({
+        action: 'create',
+        recipes: [{ name: '  Soup ', ingredients: [{ name: ' salt ' }] }],
+      });
+      assert.equal(parsed.recipes[0].name, 'Soup');
+      assert.equal(parsed.recipes[0].ingredients[0].name, 'salt');
+      assert.equal(schema.safeParse({ action: 'create', recipes: [{ name: '   ' }] }).success, false);
+      assert.equal(schema.safeParse({ action: 'create', recipes: [{ name: 'Soup', ingredients: [{ name: ' ' }] }] }).success, false);
+    });
+
+    it('trims quantity and note and treats empty as null', async () => {
+      await handlers.recipes({
+        action: 'create',
+        recipes: [{
+          name: 'Soup',
+          ingredients: [
+            { name: 'carrots', quantity: ' 2 large ', note: ' diced ' },
+            { name: 'salt', quantity: '   ', note: '' },
+          ],
+        }],
+      });
+      const [carrots, salt] = client._recipes[0].ingredients;
+      assert.deepEqual(carrots, { name: 'carrots', quantity: '2 large', note: 'diced', isHeading: false, rawIngredient: '2 large carrots, diced' });
+      assert.deepEqual(salt, { name: 'salt', quantity: null, note: null, isHeading: false, rawIngredient: 'salt' });
     });
   });
 });

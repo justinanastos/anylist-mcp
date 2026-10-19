@@ -15,7 +15,7 @@ export function register(server, getClient) {
 - list_events: Show meal plan events (sorted by date). Optional from/to (YYYY-MM-DD, inclusive).
 - list_labels: Show available labels (Breakfast, Lunch, Dinner, etc.) with IDs
 - create_event: Add meal plan events. Pass events: [{date, title?, recipe_id?, label_id?, details?}]
-- update_event: Change events. Pass events: [{event_id, date?, title?, recipe_id?, label_id?, details?}]. Only the fields given change. The event gets a new id: it is recreated, and the old id stops working.
+- update_event: Change events. Pass events: [{event_id, date?, title?, recipe_id?, label_id?, details?}]. Only the fields given change. The event gets a new id: it is recreated, and the old id stops working. Recipe scale and sort order carry over; the leftover and icon flags do not.
 - delete_event: Delete events. Pass event_ids: [...]
 Every write returns one line per change; a failed change does not stop the others.`,
     inputSchema: {
@@ -83,7 +83,8 @@ Every write returns one line per change; a failed change does not stop the other
               labelId: e.label_id,
               details: e.details,
             });
-            return `updated ${e.event_id} (new id ${result.identifier})`;
+            const line = `updated ${e.event_id} (new id ${result.identifier})`;
+            return result.oldEventNotRemoved ? `${line}, old event not removed: ${result.oldEventNotRemoved}` : line;
           });
         }
         case "delete_event": {

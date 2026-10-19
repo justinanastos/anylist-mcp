@@ -215,7 +215,8 @@ export function register(server, getClient) {
           const summary = [`Added ${added.length} of ${entries.length} items to list "${client.targetList.name}":`];
           added.forEach(n => summary.push(`  ✓ ${n}`));
           failed.forEach(f => summary.push(`  ✗ ${f}`));
-          return failed.length > 0 ? errorResponse(summary.join("\n")) : textResponse(summary.join("\n"));
+          // Same rule as every batch: an error only when nothing was added.
+          return added.length === 0 ? errorResponse(summary.join("\n")) : textResponse(summary.join("\n"));
         }
         case "check_item": {
           const targets = requireNames(params.names, action);

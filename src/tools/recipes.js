@@ -6,14 +6,14 @@ const toMinutes = (seconds) => Math.round(seconds / 60);
 const toSeconds = (minutes) => Math.round(minutes * 60);
 
 const ingredientSchema = z.object({
-  name: z.string().describe("Only what you buy, e.g. 'chicken breasts'. For a heading, the section label, e.g. 'Chicken'."),
+  name: z.string().trim().min(1).describe("Only what you buy, e.g. 'chicken breasts'. For a heading, the section label, e.g. 'Chicken'."),
   quantity: z.string().optional().describe("Amount and size, e.g. '2 large' or '1 cup'. Ignored for headings."),
   note: z.string().optional().describe("Prep, e.g. 'butterflied and pounded to 1/2 inch'. Ignored for headings."),
   is_heading: z.boolean().optional().describe("True for a section label like 'Chicken' or 'Dressing'. Never shoppable."),
 });
 
 const recipeInputSchema = z.object({
-  name: z.string().describe("Recipe name"),
+  name: z.string().trim().min(1).describe("Recipe name"),
   ingredients: z.array(ingredientSchema).optional(),
   steps: z.array(z.string()).optional().describe("Preparation steps in order"),
   note: z.string().optional(),
@@ -30,8 +30,8 @@ function toIngredient(i) {
   if (i.is_heading) {
     return { name, quantity: null, note: null, isHeading: true, rawIngredient: name };
   }
-  const quantity = i.quantity || null;
-  const note = i.note || null;
+  const quantity = i.quantity?.trim() || null;
+  const note = i.note?.trim() || null;
   const base = [quantity, name].filter(Boolean).join(" ");
   return { name, quantity, note, isHeading: false, rawIngredient: note ? `${base}, ${note}` : base };
 }

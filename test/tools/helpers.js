@@ -215,8 +215,13 @@ export class MockAnyListClient {
       if (value !== undefined) merged[key] = value;
     }
     const created = await this.createMealPlanEvent(merged);
-    await this.deleteMealPlanEvent(eventId);
-    return { identifier: created.identifier, previousIdentifier: eventId };
+    const result = { identifier: created.identifier, previousIdentifier: eventId };
+    try {
+      await this.deleteMealPlanEvent(eventId);
+    } catch (error) {
+      result.oldEventNotRemoved = error.message;
+    }
+    return result;
   }
 
   async deleteMealPlanEvent(id) {
