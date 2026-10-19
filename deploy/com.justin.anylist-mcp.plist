@@ -1,27 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Template. The installed copy at ~/Library/LaunchAgents is mode 0600 and holds the real
-     CF_ACCESS_AUD (Access app anylist-signin) and OP_SERVICE_ACCOUNT_TOKEN in place of the placeholders. -->
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.justin.anylist-mcp</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/local/bin/node</string>
-    <string>src/remote/main.ts</string>
-  </array>
-  <key>WorkingDirectory</key><string>/Users/justin/proj/anylist-mcp</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key><string>/Users/justin</string>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>NODE_ENV</key><string>production</string>
-    <key>CF_ACCESS_AUD</key><string>__CF_ACCESS_AUD__</string>
-    <key>OP_SERVICE_ACCOUNT_TOKEN</key><string>__OP_SERVICE_ACCOUNT_TOKEN__</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/anylist-mcp.log</string>
-  <key>StandardErrorPath</key><string>/tmp/anylist-mcp.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>ANYLIST_LIST_NAME</key>
+		<string>Grocery List</string>
+		<key>CF_ACCESS_AUD</key>
+		<string>__CF_ACCESS_AUD__</string>
+		<key>HOME</key>
+		<string>/Users/justin</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>OP_SERVICE_ACCOUNT_TOKEN</key>
+		<string>__OP_SERVICE_ACCOUNT_TOKEN__</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.justin.anylist-mcp</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/node</string>
+		<string>src/remote/main.ts</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/anylist-mcp.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/anylist-mcp.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/justin/proj/anylist-mcp</string>
 </dict>
 </plist>
