@@ -16,7 +16,7 @@
 | Private data | `data/`, gitignored. `data/oauth/` holds live tokens, client secrets and the signing key. |
 | Tunnel | The shared tunnel, rule `anylist.anastos-home.net` to `http://localhost:8441` in `~/.cloudflared/config.yml` |
 | Access app | `anylist-signin`, reusable policy `me-only`, on `/interaction/*` only, 24-hour session |
-| Skill | `skill/anylist-meal-planning/`. Build the zip with `node skill/zip.ts`, then upload `dist/anylist-meal-planning-skill.zip` on claude.ai. |
+| Skill | `skill/anylist-meal-planning/`. Every push to `main` touching `skill/` rebuilds the zip and replaces the `skill` release. Download: https://github.com/justinanastos/anylist-mcp/releases/download/skill/anylist-meal-planning-skill.zip |
 
 ## Who can reach what?
 
