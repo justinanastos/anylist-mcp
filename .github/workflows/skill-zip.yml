@@ -1,0 +1,23 @@
+name: Skill zip
+on:
+  push:
+    branches: [main]
+    paths: ["skill/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+      - run: node skill/zip.ts
+      - name: Replace the skill release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete skill --cleanup-tag --yes || true
+          gh release create skill dist/anylist-meal-planning-skill.zip --target "$GITHUB_SHA" --title "anylist-meal-planning skill" --notes "Built from $GITHUB_SHA"
