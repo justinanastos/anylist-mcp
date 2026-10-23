@@ -46,6 +46,14 @@ launchctl bootout gui/$(id -u)/com.justin.anylist-mcp          # stop
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.justin.anylist-mcp.plist   # start
 ```
 
+## What is this a fork of, and what shape do writes take?
+
+This is a fork of `bobby060/anylist-mcp`, kept as `justinanastos/anylist-mcp` with the original as remote `upstream`. It is a fork only, so do not open PRs against upstream. The `oidc-provider` sign-in in `src/remote/` is the addition. It went live 2026-10-18.
+
+Every write tool takes an array, even for one item. The AnyList login comes from the 1Password item `AnyList` (vault `Mac Mini`), read once at startup. The default list is `Grocery List`, set by `ANYLIST_LIST_NAME`.
+
+The claude.ai skill `anylist-meal-planning` lives in `skill/` and holds the Paprika to AnyList copy rules. Every push to `main` that touches `skill/` rebuilds it and publishes it as the `skill` release on `justinanastos/anylist-mcp`.
+
 ## What doesn't AnyList allow?
 
 - **Removing a recipe from a collection.** The server ignores every form of that operation, so the tool has no remove action. Do it in the AnyList app.
